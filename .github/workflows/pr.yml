@@ -50,9 +50,22 @@ jobs:
         run: forge build
         working-directory: sut/contracts
       - run: npm run test:unit
+      - run: npm run test:integration
+      # The corpus runs on every pull request regardless of what changed. Each
+      # entry is a bug that really happened, and replaying them costs
+      # microseconds. See docs/CI-POLICY.md.
+      - run: npm run test:corpus
       - run: npm run test:property
       - run: npm run test:contract
       - run: npm run test:consistency
+      - name: what test selection would have chosen
+        # Advisory. The tier above runs everything; this records what the map
+        # would have selected so it is continuously checked against reality
+        # before anything is allowed to depend on it.
+        run: |
+          git fetch --depth=1 origin ${{ github.base_ref || 'main' }} || true
+          CHANGED=$(git diff --name-only FETCH_HEAD...HEAD || true)
+          npm run select -- $CHANGED || true
       - name: fail if any test was skipped
         run: npm run check:no-skips
 
@@ -76,6 +89,24 @@ jobs:
         with:
           name: gas-report
           path: sut/contracts/gas-report.txt
+
+  e2e:
+    name: end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
 
   container:
     name: container builds and serves

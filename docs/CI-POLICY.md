@@ -22,12 +22,15 @@ lost most of its value even when it works.
 | --- | --- | --- |
 | Lint | 0.6s | pre-commit, PR |
 | Typecheck | 2.6s | pre-commit, PR |
-| Unit, 106 tests | 0.5s | pre-commit, PR |
+| Unit, 116 tests | 0.5s | pre-commit, PR |
+| Integration, settlement atomicity | 0.2s | PR |
+| Counterexample corpus | 0.2s | PR |
 | Solidity unit and fuzz, 26 tests | 0.1s | PR |
 | Property, differential and ledger, 300 runs | 0.7s | PR |
 | Contract, REST, WebSocket, JSON-RPC, 28 tests | 0.7s | PR |
 | Solidity invariants, 64 runs x 32 depth | 0.9s | PR |
 | Offchain/onchain consistency, 5 runs | 3.6s | PR |
+| End-to-end, 6 browser cases | 2.4s | PR |
 | Container build and smoke | ~40s | PR |
 | **Pull request total** | **~55s** | |
 | Property, 5,000 runs | 3.2s | nightly |
@@ -35,7 +38,7 @@ lost most of its value even when it works.
 | Solidity invariants, 1,000 runs x 128 depth | 53.5s | nightly |
 | Mutation testing | minutes | nightly |
 | Load, stress and latency | minutes | nightly |
-| Chaos and fault injection | minutes | nightly |
+| Chaos: reorg and fault injection | ~3s | nightly |
 | Soak | hours | weekly |
 
 The pull request tier comes to roughly 55 seconds of work, most of it the

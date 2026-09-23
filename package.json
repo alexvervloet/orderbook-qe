@@ -26,7 +26,10 @@
     "ci:timings": "node --experimental-strip-types qe/tools/timings.ts",
     "select": "node --experimental-strip-types qe/select/affected.ts",
     "ai:triage": "node --experimental-strip-types qe/ai/triage.ts",
-    "ai:generate": "node --experimental-strip-types qe/ai/generate.ts"
+    "ai:generate": "node --experimental-strip-types qe/ai/generate.ts",
+    "test:integration": "vitest run qe/suites/integration",
+    "test:chaos": "vitest run qe/suites/chaos",
+    "test:corpus": "vitest run qe/suites/property/corpus.test.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

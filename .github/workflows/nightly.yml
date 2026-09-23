@@ -93,6 +93,26 @@ jobs:
       # day to be fixed or deleted. See docs/CI-POLICY.md.
       - run: npm run flake:detect
 
+  chaos:
+    name: reorg and fault injection
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.3
+      - run: npm ci
+      - run: forge build
+        working-directory: sut/contracts
+      - run: npm run test:chaos
+
   performance:
     name: load, stress and latency
     runs-on: ubuntu-latest
