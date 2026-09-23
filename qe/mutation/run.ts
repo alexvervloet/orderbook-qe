@@ -15,7 +15,7 @@
  *   npm run mutate -- --limit 20         a sample, for a quick read
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { findMutants, type MutantSite } from './mutators.ts'
 import { EQUIVALENT_MUTANTS, isKnownEquivalent } from './equivalents.ts'
 
@@ -62,7 +62,43 @@ const TARGETS: readonly Target[] = [
 
 interface Outcome {
   readonly site: MutantSite
-  readonly status: 'killed' | 'survived' | 'equivalent' | 'uncompilable'
+  readonly status: 'killed' | 'survived' | 'equivalent' | 'timeout'
+}
+
+/**
+ * Per-mutant wall-clock limit.
+ *
+ * A mutant can turn a loop into an infinite one. `if (ready.length === 0) break`
+ * becoming `!== 0` did exactly that in the stop-trigger cascade: the loop never
+ * terminates, the test runner pins a core, and a synchronous exec waits for it
+ * forever. The first full run sat there for fifty minutes with a mutant written
+ * into the working tree. See LESSONS.md.
+ *
+ * A mutant that hangs is a killed mutant: the tests would have caught it, by
+ * never finishing. What it must not do is take the harness down with it.
+ */
+const MUTANT_TIMEOUT_MS = Number(process.env.MUTATION_TIMEOUT_MS ?? 60_000)
+
+/**
+ * A mutation run rewrites files in place, so two of them at once corrupt each
+ * other's restore. The lock makes that a clear error rather than a mystery.
+ */
+const LOCK = 'qe/mutation/.running.lock'
+
+function acquireLock(): void {
+  if (existsSync(LOCK)) {
+    throw new Error(
+      `${LOCK} exists, so another mutation run may be in progress. ` +
+        'Two runs rewrite the same files and will corrupt each other. ' +
+        `If no run is active, delete ${LOCK} and check "git status" for a ` +
+        'source file left mutated.',
+    )
+  }
+  writeFileSync(LOCK, `${process.pid}\n`)
+}
+
+function releaseLock(): void {
+  if (existsSync(LOCK)) rmSync(LOCK)
 }
 
 function argValue(flag: string): string | undefined {
@@ -70,11 +106,14 @@ function argValue(flag: string): string | undefined {
   return index === -1 ? undefined : process.argv[index + 1]
 }
 
-function runSuite(target: Target): boolean {
+/** Returns how the suite reacted to the mutant currently on disk. */
+function runSuite(target: Target): 'killed' | 'survived' | 'timeout' {
   try {
     execFileSync(target.command[0]!, target.command.slice(1), {
       cwd: target.cwd,
       stdio: 'pipe',
+      timeout: MUTANT_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
       env: {
         ...process.env,
         // Mutants that only a deep search finds are not worth the runtime here;
@@ -83,9 +122,11 @@ function runSuite(target: Target): boolean {
         PATH: `${process.env.HOME}/.foundry/bin:${process.env.PATH ?? ''}`,
       },
     })
-    return false // suite passed, so the mutant lived
-  } catch {
-    return true // suite failed, so the mutant was killed
+    return 'survived' // suite passed, so the mutant lived
+  } catch (error) {
+    const killed = (error as { signal?: string }).signal
+    // SIGKILL means we hit the timeout rather than the suite reporting failure.
+    return killed === 'SIGKILL' ? 'timeout' : 'killed'
   }
 }
 
@@ -105,7 +146,11 @@ function evaluate(target: Target, sites: readonly MutantSite[]): Outcome[] {
         continue
       }
       writeFileSync(target.file, site.mutated)
-      outcomes.push({ site, status: runSuite(target) ? 'killed' : 'survived' })
+      const status = runSuite(target)
+      if (status === 'timeout') {
+        console.log(`\n  timeout: ${site.file}:${site.line} ${site.mutator.description}`)
+      }
+      outcomes.push({ site, status })
     }
   } finally {
     // Restore no matter what. A crashed run that leaves a mutant in the source
@@ -126,6 +171,19 @@ if (targets.length === 0) {
   process.exit(1)
 }
 
+acquireLock()
+// Restore and unlock even on Ctrl-C. Without this, interrupting a run leaves a
+// mutant in the working tree, and the next person to run the tests debugs a
+// defect that was never committed.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    releaseLock()
+    console.error('\ninterrupted. Check "git status" for a file left mutated.')
+    process.exit(130)
+  })
+}
+process.on('exit', releaseLock)
+
 const report: string[] = []
 let totalKilled = 0
 let totalScored = 0
@@ -139,7 +197,9 @@ for (const target of targets) {
   const sites = findMutants(target.file, source).slice(0, limit)
   const outcomes = evaluate(target, sites)
 
-  const killed = outcomes.filter((o) => o.status === 'killed').length
+  // A hang is a kill: the suite would never have gone green.
+  const killed = outcomes.filter((o) => o.status === 'killed' || o.status === 'timeout').length
+  const timedOut = outcomes.filter((o) => o.status === 'timeout').length
   const equivalent = outcomes.filter((o) => o.status === 'equivalent').length
   const scored = outcomes.length - equivalent
   const rate = scored === 0 ? 1 : killed / scored
@@ -149,7 +209,9 @@ for (const target of targets) {
   totalEquivalent += equivalent
   survivors.push(...outcomes.filter((o) => o.status === 'survived').map((o) => o.site))
 
-  const line = `${target.name.padEnd(12)} ${killed}/${scored} killed  ${(rate * 100).toFixed(1)}%  (${equivalent} known equivalent)`
+  const line =
+    `${target.name.padEnd(12)} ${killed}/${scored} killed  ${(rate * 100).toFixed(1)}%  ` +
+    `(${equivalent} known equivalent, ${timedOut} killed by timeout)`
   console.log(line)
   report.push(line)
 }
