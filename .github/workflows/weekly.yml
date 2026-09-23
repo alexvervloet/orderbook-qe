@@ -1,0 +1,46 @@
+# Slow work that would not fit a nightly: hours of sustained load, looking for
+# drift rather than failure. See docs/CI-POLICY.md.
+
+name: weekly
+
+on:
+  schedule:
+    - cron: "0 3 * * 6"
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: Soak duration, as k6 reads it
+        default: 4h
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    name: soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+      - name: start the exchange
+        run: docker compose up -d --build --wait backend
+      - run: mkdir -p qe/suites/perf/results
+      - name: soak
+        env:
+          DURATION: ${{ inputs.duration || '4h' }}
+        run: k6 run qe/suites/perf/soak.js
+      # k6 thresholds cannot compare two metrics, so the drift check the soak
+      # exists for is computed in handleSummary and enforced here.
+      - name: fail on latency drift
+        run: |
+          node -e '
+            const v = require("./qe/suites/perf/results/soak-verdict.json")
+            console.log(`drift ${v.driftPercent}% against a limit of ${v.maxDriftPercent}%`)
+            process.exit(v.ok ? 0 : 1)
+          '
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: soak-results
+          path: qe/suites/perf/results/
