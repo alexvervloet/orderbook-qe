@@ -48,11 +48,19 @@ export const OPERATORS: readonly Mutator[] = [
 /** Characters that mean a match is part of a longer operator. */
 const GLUE = new Set(['=', '<', '>', '&', '|', '+', '-', '!'])
 
+/** Comparison operators, whose characters double as generic type brackets. */
+const COMPARISONS = new Set(['<', '>', '<=', '>='])
+
 function isStandalone(line: string, index: number, token: string): boolean {
   const before = line[index - 1]
   const after = line[index + token.length]
   if (before !== undefined && GLUE.has(before)) return false
   if (after !== undefined && GLUE.has(after)) return false
+  // `new Map<OrderId, Node>()` is not a comparison. Mutating its brackets made
+  // syntax errors, which every suite "killed", and 26 of them padded the score.
+  // Every comparison in these files is written with a space either side, and
+  // no generic is, so that is the test.
+  if (COMPARISONS.has(token) && (before !== ' ' || after !== ' ')) return false
   return true
 }
 
