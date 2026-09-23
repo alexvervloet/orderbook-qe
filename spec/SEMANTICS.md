@@ -55,9 +55,12 @@ Fillability for FOK is judged against *displayed* quantity only, and ignores
 self-trade prevention: liquidity from the taker's own account counts as
 fillable even when STP would go on to cancel it. A FOK can therefore pass the
 fillability check and then fill less than its full quantity, which looks like a
-contradiction of this section. It is a known and accepted one, and the engine
-resolves it by cancelling the whole FOK the moment STP interferes, leaving the
-already-executed trades against other accounts standing. Hidden iceberg size
+contradiction of this section. It is a known and accepted one. STP then behaves
+exactly as section 7 says: `cancel_maker` removes the maker and the FOK keeps
+matching, while `cancel_taker` and `cancel_both` stop it. Whatever is still
+unfilled when matching ends is cancelled, outcome
+`partially_filled_and_cancelled`, and the trades already executed against other
+accounts stand. Hidden iceberg size
 does not count toward filling a FOK. This is a deliberate choice, not an
 oversight: see [../docs/NON-GOALS.md](../docs/NON-GOALS.md).
 
@@ -134,13 +137,23 @@ Stops trigger on the last trade price.
   whose last trade price already satisfies it triggers immediately rather than
   waiting for the next trade. A stop submitted before anything has traded has no
   last trade price to compare against and simply waits.
-- Triggering is evaluated after each trade, and a trade caused by a triggered
-  stop can itself trigger further stops. Cascades are resolved to completion
-  before the engine returns.
+- Triggering is evaluated once the incoming order is finished: matched, and its
+  remainder rested or cancelled. A stop never runs while the order that
+  triggered it is still half-processed. If it did, a triggered stop_limit could
+  rest on the far side and the remainder then rest through it, crossing the
+  book.
+- A trade caused by a triggered stop can itself trigger further stops. Cascades
+  are resolved to completion before the engine returns.
+- Stops fire in rounds. A round takes every waiting stop that the last trade
+  price has reached and runs each one to completion in ascending sequence order.
+  Stops that become due because of trades in that round wait for the next
+  round. The result never depends on the iteration order of an internal map,
+  and a stop that became due later never runs ahead of one that was already due.
 - On trigger, `stop_market` becomes a market order and `stop_limit` becomes a
   limit order at its `price`. Both keep their original time in force.
-- Stops triggered in the same cascade are processed in ascending sequence order,
-  so the result does not depend on iteration order of an internal map.
+- The outcome returned for an order describes it as it stands when the engine
+  returns. An order that rested and was then filled by a stop it triggered is
+  reported `filled`, not `resting`.
 - A stop that has not triggered can be cancelled and is invisible in the book
   snapshot.
 
