@@ -83,6 +83,56 @@ describe('ledger conservation', () => {
     )
   })
 
+  it('moves assets between the right two accounts', () => {
+    // Conservation alone cannot see this. Crediting the seller's base to the
+    // seller conserves base perfectly while trading with nobody. A mutation
+    // that made buyer and seller the same account survived every conservation
+    // assertion above. See docs/FAILURE-MODES.md.
+    fc.assert(
+      fc.property(commandSequence(40), (commands) => {
+        const engine = new ProductionMatchingEngine()
+        const ledger = new Ledger(MARKET)
+        for (const account of ACCOUNTS) ledger.deposit(account, FUNDING_BASE, FUNDING_QUOTE)
+
+        const ids: string[] = []
+        for (const command of commands) {
+          if (command.kind !== 'submit') continue
+          ids.push(command.request.id)
+
+          for (const trade of engine.submit(command.request).trades) {
+            const buyer =
+              trade.takerSide === 'buy' ? trade.takerAccountId : trade.makerAccountId
+            const seller =
+              trade.takerSide === 'buy' ? trade.makerAccountId : trade.takerAccountId
+
+            const buyerBefore = ledger.baseOf(buyer)
+            const sellerBefore = ledger.baseOf(seller)
+            const notional = notionalOf(MARKET, trade.price, trade.quantity)
+            const buyerQuoteBefore = ledger.quoteOf(buyer)
+
+            ledger.settle(trade)
+
+            const baseAmount = trade.quantity * MARKET.baseScale
+            if (buyer === seller) {
+              // A self-trade nets to nothing in base, and still costs both fees.
+              expect(ledger.baseOf(buyer)).toBe(buyerBefore)
+            } else {
+              expect(ledger.baseOf(buyer)).toBe(buyerBefore + baseAmount)
+              expect(ledger.baseOf(seller)).toBe(sellerBefore - baseAmount)
+              // The buyer pays the notional plus exactly one fee, no more.
+              const paid = buyerQuoteBefore - ledger.quoteOf(buyer)
+              expect(paid).toBeGreaterThanOrEqual(notional)
+              expect(paid - notional).toBeLessThanOrEqual(
+                feeOf(notional, MARKET.takerFeeBps),
+              )
+            }
+          }
+        }
+      }),
+      { numRuns: RUNS },
+    )
+  })
+
   it('never leaves the fee account holding base', () => {
     fc.assert(
       fc.property(commandSequence(40), (commands) => {
@@ -137,5 +187,25 @@ describe('fee rounding', () => {
 
   it('charges nothing on a zero-fee market', () => {
     expect(feeOf(1_000_000n, 0n)).toBe(0n)
+  })
+})
+
+describe('deposit validation', () => {
+  it('accepts a zero deposit as a no-op', () => {
+    const ledger = new Ledger(MARKET)
+    ledger.deposit('alice', 0n, 0n)
+    expect(ledger.balanceOf('alice')).toEqual({ base: 0n, quote: 0n })
+  })
+
+  it('rejects a negative base deposit', () => {
+    const ledger = new Ledger(MARKET)
+    expect(() => ledger.deposit('alice', -1n, 0n)).toThrow(/non-negative/)
+  })
+
+  it('rejects a negative quote deposit', () => {
+    // Checked separately from base. A single test covering both passes even if
+    // the validation only looks at one of them.
+    const ledger = new Ledger(MARKET)
+    expect(() => ledger.deposit('alice', 0n, -1n)).toThrow(/non-negative/)
   })
 })
