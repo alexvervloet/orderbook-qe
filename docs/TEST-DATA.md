@@ -32,26 +32,31 @@ Anything beyond the fixed accounts is generated, never hand-written.
 `qe/framework/commands.ts` produces random trading sessions, and it is tuned
 rather than uniform. Prices sit in a narrow band so orders actually cross,
 accounts are few so self-trades are common, and cancels target orders that were
-really submitted. A uniform generator over the same space spends almost all its
-time on empty books and finds nothing.
+really submitted. Every order shape is generated with every time in force, since
+the combinations are where the spec spends its words. A uniform generator over
+the same space spends almost all its time on empty books and finds nothing.
 
 The generator is test equipment and needs calibrating like any other instrument.
-It is instrumented, and its output is counted: 300 sessions currently produce
-about 8,100 commands and 2,300 trades. When those numbers fall, the suite has
+Measured once, 300 sessions produced about 8,100 commands and 2,300 trades,
+before the generator was widened. When numbers like those fall, the suite has
 stopped testing something, whether or not it is still green. That is not
-hypothetical either; see [../LESSONS.md](../LESSONS.md).
+hypothetical; see [../LESSONS.md](../LESSONS.md). Nothing counts them on every
+run yet, and it should.
 
 ## Counterexamples are data too
 
-Every failing case a property test finds is shrunk and written to `qe/corpus/`,
-then replayed on every pull request. A random search that found a bug once will
-not necessarily find it again; the corpus makes it deterministic, and it costs
-microseconds compared with raising the run count.
+A failing case a property test finds is shrunk and can be written to
+`qe/corpus/`, where it is replayed on every pull request. The nightly job writes
+them automatically and files each as an issue; a person commits it once the
+cause is understood. A random search that found a bug once will not necessarily
+find it again; the corpus makes it deterministic, and it costs milliseconds
+compared with raising the run count. Entries are either limit-order sessions on
+a market, which both the offchain side and the contract can replay, or full
+engine sessions with every order type.
 
 ## Environments
 
-Three compose profiles, because starting a chain for a unit test wastes forty
-seconds per run:
+Three compose profiles, so a suite starts only what it needs:
 
 | Command | Contains | For |
 | --- | --- | --- |
@@ -59,8 +64,13 @@ seconds per run:
 | `docker compose --profile chain up` | plus Anvil | onchain and consistency |
 | `docker compose --profile chaos up` | plus Toxiproxy | fault injection |
 
-Everything binds to an ephemeral port by default. A fixed port is a flaky test
-waiting for a parallel run, and the fix is an ephemeral port rather than a retry.
+Everything a test process starts for itself binds to an ephemeral port: the
+contract-test server and the Anvil node each test file spawns. A fixed port is a
+flaky test waiting for a parallel run, and the fix is an ephemeral port rather
+than a retry. The long-lived services are the exception, on fixed ports because
+something outside the test has to find them: compose publishes 8080, 8545, 8474
+and 8666, and Playwright's server listens on 8099. Each can be moved with an
+environment variable.
 
 ## Resetting between tests
 
@@ -86,4 +96,4 @@ than a replayed day of real trading, without the handling problem.
 
 There is no market data replay from a real exchange. It would be useful for
 performance realism and is not built; the load profile is synthetic and shaped
-to match the committed testnet target. See [NON-GOALS.md](NON-GOALS.md).
+to the throughput target assumed in `qe/suites/perf/load.js`. See [NON-GOALS.md](NON-GOALS.md).
