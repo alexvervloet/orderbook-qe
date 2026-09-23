@@ -1,0 +1,115 @@
+# The searching work: deep property runs, mutation, load and chaos. Allowed to
+# be slow, allowed to find nothing. See docs/CI-POLICY.md.
+
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  deep-properties:
+    name: deep property and consistency runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.3
+      - run: npm ci
+      - run: forge build
+        working-directory: sut/contracts
+      - name: properties at depth
+        env:
+          PROPERTY_RUNS: 20000
+        run: npm run test:property
+      - name: consistency at depth
+        env:
+          CONSISTENCY_RUNS: 40
+        run: npm run test:consistency
+      - name: solidity invariants at depth
+        env:
+          FOUNDRY_PROFILE: nightly
+        run: forge test --match-contract Invariant
+        working-directory: sut/contracts
+
+  mutation:
+    name: mutation testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.3
+      - run: npm ci
+      - run: forge build
+        working-directory: sut/contracts
+      # Reported, never gated. A mutation score that blocks a merge becomes a
+      # number people optimise. See docs/NON-GOALS.md.
+      - run: npm run mutate
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: qe/mutation/reports/
+
+  flake:
+    name: flake detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.3
+      - run: npm ci
+      - run: forge build
+        working-directory: sut/contracts
+      # Ten identical runs. Anything not unanimous is flaky and gets one working
+      # day to be fixed or deleted. See docs/CI-POLICY.md.
+      - run: npm run flake:detect
+
+  performance:
+    name: load, stress and latency
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+      - name: start the exchange
+        run: docker compose up -d --build --wait backend
+      - name: load
+        run: k6 run qe/suites/perf/load.js
+      - name: stress
+        run: k6 run qe/suites/perf/stress.js
+      - name: latency
+        run: k6 run qe/suites/perf/latency.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-results
+          path: qe/suites/perf/results/
