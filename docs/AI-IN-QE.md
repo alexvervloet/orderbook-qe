@@ -2,8 +2,11 @@
 
 What it is used for here, what it is measured against, and where it lost.
 
-Everything below is reproducible: `secrun npm run ai:triage`,
-`secrun npm run ai:generate`. Raw results are in `qe/ai/results/`.
+Everything below is reproducible with an API key in `ANTHROPIC_API_KEY`:
+`npm run ai:triage`, `npm run ai:triage -- --model claude-sonnet-5`, and
+`AI_MAX_SPEND_USD=1 npm run ai:generate` (see [Spend control](#spend-control)
+for why generation needs the limit raised). Raw results are in
+`qe/ai/results/`, one file per model for triage.
 
 ## The rule this follows
 
@@ -65,13 +68,17 @@ there is no measurable advantage here, not that Haiku is better. The useful
 conclusion is the decision it supports: triage runs on Haiku 4.5, and the
 upgrade would have to earn its place on a bigger corpus.
 
-**It is reliable exactly where it needs to be.** Both models got every
-`product-bug` right, and neither ever labelled a product bug as an environment
-problem. The dangerous error in triage is dismissing a real defect as flakiness,
-and it did not happen.
+**The expensive model made the dangerous mistake.** The worst error in triage is
+dismissing a real defect, because it sends the fix to the wrong place and the
+bug ships. Haiku 4.5 got all three product bugs right. Sonnet 5 called one of
+them, the contract's overflow panic, a test bug: it argued the test's inputs
+were unrealistic and the assertion should be loosened, which is exactly the
+wrong response. Neither model ever called a product bug an environment problem.
+One miss in three is too few cases to rank the models on, and it is the reason
+triage output here is a suggestion and never a gate.
 
-**It over-predicts `test-equipment`.** Precision 40%. Every single
-misclassification, across both models, was something else called
+**It over-predicts `test-equipment`.** Haiku 4.5's precision on it is 40%. Every
+Haiku miss, and three of Sonnet 5's four, was something else called
 `test-equipment`. The models are good at noticing that a suite is not exercising
 what it claims and poor at telling that apart from a test that is simply wrong.
 
@@ -94,13 +101,13 @@ Sonnet 5 was 0.69 against 0.72, correctly ordered but far too close to threshold
 on. Nothing in this pipeline routes on the confidence number, because measuring
 it showed it does not carry information.
 
-### How it is used
+### How it would be used
 
-As a first pass that sorts and suggests, never as a gate. A nightly triage over
-the failures a run produced, with its output attached to the report a human
-reads. It is good at the bulk sorting and known to be weak at two specific
-edges, and both of those weaknesses are documented above rather than discovered
-later by someone trusting it.
+As a first pass that sorts and suggests, never as a gate: run over a nightly
+job's failures, with its output attached to the report a human reads. That job
+does not exist yet. What exists is the scored harness that says it is worth
+building and where not to trust it: good at the bulk sorting, weak at two
+specific edges, and capable of the dangerous error above.
 
 ## Track B: test generation
 
@@ -116,8 +123,9 @@ What comes back is held to the same bar as anything a person writes here:
 1. Does it typecheck? One repair round is allowed, with the compiler's own error
    fed back, because that is the workflow a person actually uses. Editing the
    file myself is not allowed; the repair count is reported instead.
-2. Does it pass against correct code? A test that fails on correct code is
-   wrong, and is discarded rather than fixed.
+2. Does it pass against correct code? One more repair round is allowed, with the
+   failing output fed back. A test still failing after that is wrong, and is
+   discarded rather than fixed by hand.
 3. What share of mutants does it kill, running alone, compared with the
    hand-written suite on the same mutants?
 
@@ -129,11 +137,17 @@ Target: the ledger. Model: Sonnet 5. Cost: $0.23.
 
 | | Result |
 | --- | --- |
-| First attempt, against correct code | 25 passed, 1 failed |
 | Typecheck | Failed, then passed after one repair round |
-| After a second repair round | 26 passed, 0 failed |
-| **Mutation kill rate, generated suite** | **11 / 13 = 84.6%** |
-| **Mutation kill rate, hand-written suite** | **13 / 13 = 100%** |
+| Against correct code, before the second round | 25 passed, 1 failed |
+| After the second repair round | 26 passed, 0 failed |
+| **Mutation kill rate, generated suite** | **7 / 9 = 78%** |
+| **Mutation kill rate, hand-written suite** | **9 / 9 = 100%** |
+
+The run itself reported 11 of 13 against 13 of 13. Four of those thirteen were
+not real mutants: the mutation runner, at the time, also mutated the brackets
+in `new Map<AccountId, bigint>()`, producing syntax errors that both suites
+"killed". Neither survivor was one of them, so on real mutants the result is 7
+of 9 against 9 of 9. See [MUTATION.md](MUTATION.md).
 
 ### What it got right, and what it missed
 
@@ -155,7 +169,8 @@ boundary, where a trader spends their balance down to precisely zero. The model
 tested a buyer with too little and a buyer with plenty, and not the buyer with
 exactly enough.
 
-Both are boundary conditions, and both were missing from my hand-written suite
+One is a boundary and one is a logical connective, and both are on a guard: the
+line whose whole job is to refuse. Both were missing from my hand-written suite
 too until mutation testing pointed at them. That is the honest version of this
 result: the model's blind spots were the same as mine, and the thing that found
 them in both cases was mutation testing rather than either of us being careful.
@@ -165,25 +180,24 @@ them in both cases was mutation testing rather than either of us being careful.
 Worth recording, because the failure mode is specific and it is not the one
 people expect.
 
-The first run produced three tests that all failed the same way. `feeOf` takes
-`(notional, bps)`, and the model passed an already-multiplied product as the
-first argument with `10_000` as the second, which is a 100% fee. Its own
-comments gave it away: one read `notional * bps = 1001 -> /10000 = 0.1001 ->
-ceil = 1` above a call that passes `1001` as the notional.
+`feeOf` takes `(notional, bps)`, and the model passed an already-multiplied
+product as the first argument with `10_000` as the second, which is a 100% fee.
+Its own comments gave it away: one read `notional * bps = 1001 -> /10000 =
+0.1001 -> ceil = 1` above a call that passes `1001` as the notional.
 
 So the model had understood the rounding rule from the specification exactly
-right, and got the function's signature wrong. Three tests, one misreading. That
-is why "23 of 26 passed" is a poor quality signal on its own: the failures were
-not three independent mistakes, and neither are the passes three independent
-successes.
+right, and got the function's signature wrong. That is why a pass count is a
+poor quality signal on its own: one misreading can fail several tests at once,
+and several passes can rest on one correct reading.
 
 ### The conclusion I would actually act on
 
 Generated tests are worth having and are not worth trusting. On this module they
-reached about 85% of what the hand-written suite catches, for about twenty
-minutes of supervision and $0.23, and the shortfall was entirely in the
-boundary cases that a specification does not spell out and a careful person
-finds by asking how the line could be wrong.
+caught 7 of the 9 mutants the hand-written suite catches, for $0.23 and two
+repair rounds, and the shortfall was entirely on the guards: the cases a
+specification does not spell out and a careful person finds by asking how the
+line could be wrong. One module and one run is a small sample, and the number
+should be read as that.
 
 The workflow that follows is: generate, then run mutation against what came
 back, and treat the surviving mutants as the review comments. That is cheaper
@@ -216,12 +230,17 @@ more expensive model.
 
 ## Spend control
 
-Every run counts tokens through the API before sending, prints an estimate, and
-tracks actual spend against a limit that defaults to $0.25. Exceeding it throws.
+Every run counts tokens through the API before sending and prints an estimate.
+Before each call it also checks that the call's worst case, its input plus the
+full output budget, fits under a limit that defaults to $0.25, and refuses to
+send it otherwise. After each call it records what was actually spent.
 
-This is not frugality theatre. A generation loop that retries on failure is a
-loop that can spend money without anyone watching, and the guard is what makes
-it safe to run unattended in a nightly job.
+The worst-case check was added late. The first version only checked after each
+call, so a single generation call, which can cost $0.32 at its 32,000-token
+output budget, could go straight through the limit before anything noticed. A
+generation run now needs `AI_MAX_SPEND_USD` raised on purpose, which is the
+point: a loop that retries on failure is a loop that can spend money without
+anyone watching.
 
 ## What AI is not used for here
 
@@ -237,6 +256,9 @@ suite would then be comparing two things that can be wrong in the same way.
 conservation properties and the escrow arithmetic are hand-written. The
 measurement above is the argument: on the ledger specifically, the generated
 suite missed the overdraft boundary, and the overdraft boundary is where an
-exchange either refuses a trade or lets an account go negative.
+exchange either refuses a trade or lets an account go negative. The
+hand-written suite is not immune either: its test of which account pays which
+fee was loose enough to pass with the two fees swapped, until an audit
+tightened it.
 
 **Not for triaging equivalent mutants**, for the reason measured above.
