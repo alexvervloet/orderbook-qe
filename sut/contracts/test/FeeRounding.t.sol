@@ -88,4 +88,75 @@ contract FeeRoundingTest is Test {
         uint256 fee = (notional * 7 + 9_999) / 10_000;
         assertEq(exchange.availableQuote(alice), quoteBefore - notional - fee);
     }
+
+    /**
+     * Every test above fills one lot at a time, and so did the fix they
+     * guard. Escrow was locked as a ceiling per lot and released as one
+     * ceiling over the whole fill, which is smaller, so a fill of two or more
+     * lots left a unit or two locked forever with no order left to cancel.
+     * These four cover each side of each role.
+     */
+    function test_MultiLotFillReleasesTheMakerBuyersEscrow() public {
+        vm.prank(alice);
+        exchange.placeLimitOrder(true, 99, 2);
+        vm.prank(bob);
+        exchange.placeLimitOrder(false, 99, 2);
+
+        assertEq(exchange.lockedQuote(alice), 0, "maker buyer stranded escrow");
+        assertEq(exchange.lockedQuote(bob), 0, "taker seller stranded escrow");
+    }
+
+    function test_MultiLotFillReleasesTheTakerBuyersEscrow() public {
+        vm.prank(bob);
+        exchange.placeLimitOrder(false, 98, 2);
+        vm.prank(alice);
+        exchange.placeLimitOrder(true, 99, 2);
+
+        assertEq(exchange.lockedQuote(alice), 0, "taker buyer stranded escrow");
+        assertEq(exchange.lockedQuote(bob), 0, "maker seller stranded escrow");
+    }
+
+    function test_MultiLotPartialFillThenCancelLeavesNothingLocked() public {
+        vm.prank(alice);
+        uint64 orderId = exchange.placeLimitOrder(true, 99, 5);
+        vm.prank(bob);
+        exchange.placeLimitOrder(false, 99, 3);
+        vm.prank(alice);
+        exchange.cancelOrder(orderId);
+
+        assertEq(exchange.lockedQuote(alice), 0, "escrow left after cancel");
+    }
+
+    /// Whatever the prices and split, once nothing rests nothing is locked.
+    function testFuzz_NothingLockedOnceNothingRests(uint128 price, uint128 makerQty, uint128 takerQty, bool makerBuys)
+        public
+    {
+        price = uint128(bound(price, 1, 1_000_000));
+        makerQty = uint128(bound(makerQty, 1, 1_000));
+        takerQty = uint128(bound(takerQty, 1, 1_000));
+        // The taker crosses by a tick, so it executes at the maker's price and
+        // its own escrow was taken at a different one.
+        uint128 takerPrice = makerBuys ? price : price + 1;
+        uint128 makerPrice = makerBuys ? price + 1 : price;
+
+        vm.prank(alice);
+        uint64 makerId = exchange.placeLimitOrder(makerBuys, makerPrice, makerQty);
+        vm.prank(bob);
+        uint64 takerId = exchange.placeLimitOrder(!makerBuys, takerPrice, takerQty);
+
+        (address makerOwner,,,,,) = exchange.orders(makerId);
+        if (makerOwner != address(0)) {
+            vm.prank(alice);
+            exchange.cancelOrder(makerId);
+        }
+        if (takerId != 0) {
+            vm.prank(bob);
+            exchange.cancelOrder(takerId);
+        }
+
+        assertEq(exchange.lockedQuote(alice), 0, "maker quote stranded");
+        assertEq(exchange.lockedQuote(bob), 0, "taker quote stranded");
+        assertEq(exchange.lockedBase(alice), 0, "maker base stranded");
+        assertEq(exchange.lockedBase(bob), 0, "taker base stranded");
+    }
 }
