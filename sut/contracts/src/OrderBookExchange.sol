@@ -267,32 +267,28 @@ contract OrderBookExchange {
         uint256 baseAmount = uint256(fill) * baseScale;
         uint256 takerFee = _ceilDiv(notional * takerFeeBps, BPS);
         uint256 makerFee = _ceilDiv(notional * makerFeeBps, BPS);
-        uint256 worstFeeBps = takerFeeBps > makerFeeBps ? takerFeeBps : makerFeeBps;
+        // Release escrow by exactly the rule it was locked with: a ceiling per
+        // lot at the price each order locked at. The taker locked at its own
+        // limit; the maker rests at execPrice, so it locked at that. A single
+        // ceiling over the whole fill is smaller than the sum of the per-lot
+        // ceilings, and the difference used to stay locked forever.
+        uint256 takerLockedFee = uint256(fill) * _feePerLot(takerLimit);
+        uint256 makerLockedFee = uint256(fill) * _feePerLot(execPrice);
 
         if (takerIsBuy) {
             uint256 lockedAtLimit = uint256(fill) * takerLimit * quoteScale;
-            uint256 lockedFee = _ceilDiv(lockedAtLimit * worstFeeBps, BPS);
-            lockedQuote[taker] -= lockedAtLimit + lockedFee;
-            availableQuote[taker] += lockedAtLimit + lockedFee - notional - takerFee;
+            lockedQuote[taker] -= lockedAtLimit + takerLockedFee;
+            availableQuote[taker] += lockedAtLimit + takerLockedFee - notional - takerFee;
             availableBase[taker] += baseAmount;
 
             lockedBase[maker] -= baseAmount;
-            // The maker rests at execPrice, so its escrowed fee is the fee on
-            // this same notional. No lookup needed.
-            uint256 makerLockedFee = _ceilDiv(notional * worstFeeBps, BPS);
             lockedQuote[maker] -= makerLockedFee;
             availableQuote[maker] += notional + makerLockedFee - makerFee;
         } else {
-            uint256 lockedBaseAmount = baseAmount;
-            uint256 lockedFee =
-                _ceilDiv(uint256(fill) * takerLimit * quoteScale * worstFeeBps, BPS);
-            lockedBase[taker] -= lockedBaseAmount;
-            lockedQuote[taker] -= lockedFee;
-            availableQuote[taker] += notional + lockedFee - takerFee;
+            lockedBase[taker] -= baseAmount;
+            lockedQuote[taker] -= takerLockedFee;
+            availableQuote[taker] += notional + takerLockedFee - takerFee;
 
-            // The maker buyer rests at execPrice, so its escrow is exactly this
-            // notional plus the fee on it: nothing to refund beyond the fee gap.
-            uint256 makerLockedFee = _ceilDiv(notional * worstFeeBps, BPS);
             lockedQuote[maker] -= notional + makerLockedFee;
             availableQuote[maker] += makerLockedFee - makerFee;
             availableBase[maker] += baseAmount;
@@ -400,8 +396,12 @@ contract OrderBookExchange {
      * funds are stuck.
      *
      * Charging a ceiling per lot makes locking and releasing the same
-     * arithmetic in a different order, which always balances. It escrows
-     * slightly more than the fee will be; the surplus returns on settlement.
+     * arithmetic in a different order, which always balances, provided every
+     * release uses this function too. It escrows slightly more than the fee
+     * will be; the surplus returns to available balance on settlement.
+     *
+     * The first version of this fix released a single ceiling over each fill
+     * instead, which is smaller, and stranded a unit or two per multi-lot fill.
      *
      * Found by the offchain/onchain differential suite on a market whose fees
      * do not divide evenly. See docs/FAILURE-MODES.md.
