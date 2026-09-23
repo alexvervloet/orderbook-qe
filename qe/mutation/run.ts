@@ -122,6 +122,35 @@ function reapOrphanedWorkers(): void {
   spawnSync('pkill', ['-9', '-f', 'vitest/dist/workers'], { stdio: 'ignore' })
 }
 
+/**
+ * Recompile a restored Solidity target.
+ *
+ * Restoring the source is not enough for a language that produces build
+ * artifacts. `forge test` leaves the last mutant's bytecode in `out/`, and
+ * every consumer of that directory then deploys a mutated contract with a clean
+ * `git status` to reassure them. The offchain/onchain suites failed for an hour
+ * this way, and the symptom looked like a fixture problem two directories away.
+ *
+ * TypeScript targets need nothing here because nothing compiles them ahead of
+ * time. That asymmetry is exactly why it was easy to miss.
+ */
+function rebuildIfCompiled(target: Target): void {
+  if (!target.file.endsWith('.sol')) return
+  try {
+    execFileSync('forge', ['build'], {
+      cwd: target.cwd,
+      stdio: 'pipe',
+      timeout: 120_000,
+      env: { ...process.env, PATH: `${process.env.HOME}/.foundry/bin:${process.env.PATH ?? ''}` },
+    })
+  } catch {
+    console.error(
+      '\nWARNING: could not rebuild contracts after restoring the source. ' +
+        'Run `forge build --force` in sut/contracts before trusting any onchain test.',
+    )
+  }
+}
+
 /** Returns how the suite reacted to the mutant currently on disk. */
 function runSuite(target: Target): 'killed' | 'survived' | 'timeout' {
   try {
@@ -177,6 +206,7 @@ function evaluate(target: Target, sites: readonly MutantSite[]): Outcome[] {
     // Restore no matter what. A crashed run that leaves a mutant in the source
     // is a far worse outcome than a missing report.
     writeFileSync(target.file, original)
+    rebuildIfCompiled(target)
   }
   if (process.stdout.isTTY) process.stdout.write('\r')
   return outcomes
