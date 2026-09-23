@@ -51,8 +51,12 @@ immediately by this. Both were cached aggregates, exactly the thing nobody
 writes an assertion about.
 
 **Mutation score instead of coverage.** Not "I planted twelve bugs and found
-twelve", but a kill rate against machine-generated mutants, with equivalent
-mutants registered and argued rather than quietly counted.
+twelve", but a kill rate against machine-generated mutants: currently 258 of
+258, after excluding 22 equivalent mutants that are individually argued in
+`qe/mutation/equivalents.ts`. The first run was 260 of 280, and the difference
+is triage rather than new tests. What that number does and does not mean is in
+[docs/MUTATION.md](docs/MUTATION.md), including the fact that the worst bug in
+this repository is of a kind mutation testing cannot find.
 
 ## Layout
 

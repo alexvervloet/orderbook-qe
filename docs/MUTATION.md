@@ -43,6 +43,56 @@ unadjusted number as a target sends someone chasing a test that cannot exist.
 
 The report is a diagnostic. It goes to a human, who decides.
 
+## The current result, and what it does not mean
+
+```
+engine       81/81    100%   (10 known equivalent, 1 killed by timeout)
+book-side    24/24    100%   ( 0 known equivalent, 1 killed by timeout)
+ledger       13/13    100%   ( 1 known equivalent, 0 killed by timeout)
+reference    86/86    100%   (11 known equivalent, 2 killed by timeout)
+contract     54/54    100%   ( 0 known equivalent, 0 killed by timeout)
+
+overall     258/258   100%   (22 equivalent mutants excluded)
+```
+
+A 100% score should raise an eyebrow, so here is precisely what it is.
+
+**It is 258 of 258 after excluding 22 equivalent mutants.** That exclusion is a
+human judgement recorded in `qe/mutation/equivalents.ts`, one argument per
+entry. If an argument is wrong, the real score is lower. The arguments are
+written down so they can be checked rather than trusted.
+
+**It is a score after triage, not before.** The first full run was 260 of 280.
+Of the 20 survivors, 13 turned out to be equivalent, 4 were genuine gaps that
+are now covered, 1 was dead code that has been deleted, and the remaining 2 are
+in the registry. The 93% and the 100% are the same suite; the difference is a
+few hours of reading.
+
+**Four mutants were killed by timeout**, meaning they turned a loop into an
+infinite one. Counted as killed, because a suite that never finishes never goes
+green, and flagged separately so they are not mistaken for ordinary kills.
+
+**It covers these operators only.** Comparison flips, boundary shifts, logical
+connectives and compound assignment. It does not delete statements, reorder
+them, or change constants, so there are classes of defect this number says
+nothing about.
+
+**It says nothing about the code that is not mutated.** The server, the wire
+encoding, the exchange service and the frontend are not targets. Their coverage
+comes from the contract and end-to-end suites and is not expressed as a kill
+rate.
+
+The most useful thing in the table is not the percentage. It is that the
+contract scored 54 of 54 with zero equivalents, and that the worst bug in this
+repository was in the contract and was not found by mutation testing at all. It
+was found by differential testing against a market whose fee arithmetic does not
+divide evenly. A mutation operator that flips a comparison cannot produce
+`ceil(a) + ceil(b) != ceil(a + b)`, because that bug is not a mutated line: it
+is two correct lines that disagree.
+
+Mutation testing measures whether the tests check the code that exists. It
+cannot tell you the design is wrong.
+
 ## Equivalent mutants
 
 A mutant that changes the source without changing behaviour. No test can detect
