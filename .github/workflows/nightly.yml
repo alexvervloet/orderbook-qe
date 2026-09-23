@@ -34,7 +34,29 @@ jobs:
       - name: properties at depth
         env:
           PROPERTY_RUNS: 20000
+          # A failing session is shrunk and appended to qe/corpus/. The step
+          # below turns it into an issue, so a person reads it before it
+          # becomes a permanent test. See qe/framework/corpus.ts.
+          SAVE_COUNTEREXAMPLES: "1"
         run: npm run test:property
+      - name: open an issue for any new counterexample
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git diff --quiet -- qe/corpus/counterexamples.json && exit 0
+          {
+            echo "The nightly property run found a failing session and shrank it."
+            echo "Replay it, find the cause, then commit the entry below to qe/corpus/counterexamples.json"
+            echo "with a real summary and reference, so it runs on every pull request from then on."
+            echo
+            echo '```diff'
+            git diff -- qe/corpus/counterexamples.json
+            echo '```'
+            echo
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > issue.md
+          gh issue create --title "Nightly property counterexample $(date -u +%Y-%m-%d)" --body-file issue.md
       - name: consistency at depth
         env:
           CONSISTENCY_RUNS: 40
@@ -111,7 +133,18 @@ jobs:
       - run: npm ci
       - run: forge build
         working-directory: sut/contracts
-      - run: npm run test:chaos
+      # The network tests skip without Toxiproxy, which is right on a laptop
+      # and wrong here. The first version of this job never started it, so it
+      # would have skipped all five every night and stayed green.
+      - name: start the backend behind Toxiproxy
+        run: docker compose --profile chaos up -d --build --wait
+      - name: chaos suite
+        env:
+          REQUIRE_TOXIPROXY: "1"
+        run: npm run test:chaos
+      - name: stop the chaos profile
+        if: always()
+        run: docker compose --profile chaos down
 
   performance:
     name: load, stress and latency
@@ -122,6 +155,9 @@ jobs:
       - uses: grafana/setup-k6-action@v1
       - name: start the exchange
         run: docker compose up -d --build --wait backend
+      # handleSummary writes here, and k6 does not create directories. The
+      # directory is gitignored, so it does not exist on a fresh checkout.
+      - run: mkdir -p qe/suites/perf/results
       - name: load
         run: k6 run qe/suites/perf/load.js
       - name: stress
