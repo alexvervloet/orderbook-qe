@@ -5,7 +5,9 @@ If a test and this document disagree, one of them is a bug and the disagreement
 gets resolved here first.
 
 Written before either engine, so that "the test agrees with the code" is never
-the reason a test passes.
+the reason a test passes. It has been amended since, each time because a
+behaviour turned out to be undecided or decided wrongly; section 9's ordering
+rules are the most recent, after both engines were found to cross the book.
 
 ## 1. Units
 
@@ -175,8 +177,9 @@ Cancel is idempotent. Cancelling an unknown, already filled, or already
 cancelled order returns `cancelled: false` and is not an error.
 
 A cancelled order never appears in a later trade. An engine that can fill a
-cancelled order has a race, and the concurrency suite exists to find exactly
-that.
+cancelled order has a race. The property suites interleave cancels with orders
+to look for one; see [../docs/NON-GOALS.md](../docs/NON-GOALS.md) for what that
+does not cover.
 
 ## 12. Validation
 
