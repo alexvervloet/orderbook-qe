@@ -497,3 +497,53 @@ the flaky check at 17%.
 
 **Next time.** A detector has to be shown the thing it detects before its
 silence means anything. Point it at a known flake once, on purpose.
+
+## A perfect mutation score that was three kinds of wrong
+
+**Expected.** 258 of 258, after 22 argued equivalents, meant every mutant the
+runner made was either killed or explained.
+
+**What happened.** An audit took the number apart.
+
+The equivalent registry matched on file and source line and ignored the
+operator. The reduce-only lines are listed for their `>` and `<` boundaries,
+which really are unreachable, and that silently excused the `===` and `&&`
+mutants on the same lines too: eight real mutants, all of them killable, never
+scored. The registry also named a `break-to-continue` operator the runner does
+not have.
+
+The comparison operators mutated generic brackets. `new Map<OrderId, Node>()`
+became a syntax error, which every suite "killed", and 26 of those padded the
+denominator. The ledger's 13 of 13 was 9 of 9 plus four of these.
+
+The contract scored 57 of 57. Run again with the flaky invariant check gone and
+nothing persisted, it scored 43 of 57. The likeliest cause is Foundry replaying
+a persisted invariant failure against every mutant after it, since the runner
+never cleared `cache/invariant`, but the old run cannot be reproduced to prove
+it. Of the 14 survivors, nine were real gaps in the Solidity tests: balances
+spent to exactly zero, a maker buyer's refund, the loop continuing after the
+taker filled, the sell side of the step limit, and the overflow guard's
+boundary. Five were equivalent and are now argued in the registry.
+
+Writing the test for the overflow guard's boundary found a real bug one line
+away. A buy whose notional exactly fits still adds its fee escrow, and that sum
+overflowed with a panic, the failure `NotionalOverflow` exists to replace.
+
+My own fix to the runner also broke on its first real run. I treated any
+string error code as "the command could not be spawned", and a timed-out
+mutant carries `ETIMEDOUT`, so the first infinite-loop mutant stopped the run
+instead of counting as a kill.
+
+**Fix.** Equivalents match on operator. Comparisons mutate only when spaced
+like comparisons. A unit test fails when a registry entry names an operator
+that does not exist or a mutant that is no longer generated. Every target gets
+a baseline run on unmutated code first, a spawn failure is an error rather
+than a kill, persisted invariant failures are cleared before each contract
+run, and an interrupt stops the run and restores the source. Current score:
+TypeScript 185 of 185, contract 52 of 53, with 19 argued equivalents. The one
+survivor is on the new overflow guard and needs an escrow of exactly 2^256-1
+to kill, which no balance can fund.
+
+**Next time.** A mutation score is only as good as three things around it: what
+counts as a mutant, what counts as a kill, and what counts as excused. Each of
+those was wrong here in a way that made the number go up.
