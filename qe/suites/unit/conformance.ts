@@ -537,6 +537,24 @@ export function describeMatchingEngine(name: string, create: Factory): void {
         expect(rejection(result)).toBe('duplicate_order_id')
       })
 
+      it('rejects a stop order with no trigger price', () => {
+        // Mutating the || in the trigger validation to && made this pass
+        // validation, and a stop with a null trigger then compares a price
+        // against null. Nothing covered it, because every builder supplies a
+        // trigger. See docs/MUTATION.md.
+        const result = engine.submit(
+          stopMarket('buy', 1n, 1n, { accountId: 'a', triggerPrice: null }),
+        )
+
+        expect(rejection(result)).toBe('invalid_trigger_price')
+      })
+
+      it('rejects a stop order with a non-positive trigger price', () => {
+        const result = engine.submit(stopMarket('buy', 0n, 1n, { accountId: 'a' }))
+
+        expect(rejection(result)).toBe('invalid_trigger_price')
+      })
+
       it('rejects a trigger price on a non-stop order', () => {
         const result = engine.submit(buy(100n, 1n, { accountId: 'a', triggerPrice: 99n }))
 
