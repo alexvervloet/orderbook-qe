@@ -150,16 +150,24 @@ contract OrderBookInvariantTest is Test {
     }
 
     /**
-     * The run must actually trade. A suite that places no orders satisfies
-     * every property above and proves nothing.
+     * The handler must be able to trade. A handler that refuses everything
+     * satisfies every property above and proves nothing.
      *
-     * This belongs in `afterInvariant`, not in an invariant. Foundry checks
-     * invariants after every call including the first, so "at least one order
-     * has been placed" is false at the start of every run by construction. It
-     * is a statement about a finished run, not a property of every state.
+     * This used to be an `afterInvariant` asserting that every run placed an
+     * order. That is not true of a healthy run: a run whose calls are all
+     * withdrawals, or that withdraws a trader dry first, places nothing, and
+     * the check failed about one run in five. Worse, Foundry persists a failed
+     * sequence and replays it, so one bad draw failed every run after it. What
+     * the check was guarding against is a handler that swallows funded orders,
+     * and that is a deterministic question with a deterministic test.
      */
-    function afterInvariant() public view {
-        assertGt(handler.ghostPlaced(), 0, "the run placed no orders");
+    function test_HandlerPlacesAFundedOrder() public {
+        handler.placeOrder(0, true, 100, 1);
+        handler.placeOrder(1, false, 100, 1);
+
+        assertEq(handler.ghostPlaced(), 2, "the handler swallowed a funded order");
+        assertEq(handler.ghostRefused(), 0, "a funded order was refused");
+        assertEq(exchange.bestPrice(true), 0, "the two orders should have traded");
     }
 
     // -------------------------------------------------------------- helpers
