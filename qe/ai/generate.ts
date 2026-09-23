@@ -15,8 +15,12 @@
  * convincing; assertions that restate the implementation look exactly like
  * assertions that check a requirement, and only a mutant can tell them apart.
  *
- *   secrun npm run ai:generate
- *   secrun npm run ai:generate -- --target ledger
+ *   ANTHROPIC_API_KEY=... AI_MAX_SPEND_USD=1 npm run ai:generate
+ *   ANTHROPIC_API_KEY=... AI_MAX_SPEND_USD=1 npm run ai:generate -- --target ledger
+ *
+ * The spend guard checks each call's worst case before sending it, and one
+ * call with this output budget can cost more than the default $0.25 limit, so
+ * the limit has to be raised on purpose to run this at all.
  */
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -39,8 +43,14 @@ interface Target {
   readonly spec: string
   /** Where the generated suite is written. */
   readonly output: string
-  /** The hand-written suite, for the comparison. */
-  readonly handWritten: string
+  /**
+   * The hand-written suites that guard this module, for the comparison. They
+   * must be runnable test files or directories: book-side once pointed at
+   * conformance.ts, which is a module rather than a test file, so vitest found
+   * nothing, exited non-zero for every mutant, and scored the hand-written side
+   * at 100%.
+   */
+  readonly handWritten: readonly string[]
 }
 
 const TARGETS: readonly Target[] = [
@@ -49,16 +59,24 @@ const TARGETS: readonly Target[] = [
     source: 'sut/backend/ledger.ts',
     spec: 'spec/LEDGER.md',
     output: 'qe/ai/generated/ledger.generated.test.ts',
-    handWritten: 'qe/suites/property/ledger.test.ts',
+    handWritten: ['qe/suites/property/ledger.test.ts'],
   },
   {
     name: 'book-side',
     source: 'sut/backend/engine/book-side.ts',
     spec: 'spec/SEMANTICS.md',
     output: 'qe/ai/generated/book-side.generated.test.ts',
-    handWritten: 'qe/suites/unit/conformance.ts',
+    // What the mutation runner itself uses for this target.
+    handWritten: ['qe/suites/unit', 'qe/suites/property'],
   },
 ]
+
+/**
+ * Thinking and text share this budget. At 16000 the file came back cut off
+ * mid-literal, and a truncated file looks exactly like a badly written one
+ * three steps later.
+ */
+const MAX_OUTPUT_TOKENS = 32_000
 
 const SYSTEM = `You write tests for an onchain exchange. You are given a written
 specification and the module that is supposed to implement it.
@@ -116,11 +134,11 @@ function stripFence(text: string): string {
 }
 
 /** Generated suites live outside the default config, so they carry their own. */
-function vitestArgs(suiteFile: string): string[] {
-  const config = suiteFile.startsWith('qe/ai/generated/')
+function vitestArgs(suites: readonly string[]): string[] {
+  const config = suites.some((s) => s.startsWith('qe/ai/generated/'))
     ? ['--config', 'vitest.generated.config.ts']
     : []
-  return ['vitest', 'run', ...config, suiteFile]
+  return ['vitest', 'run', ...config, ...suites]
 }
 
 function run(command: string, args: readonly string[]): { ok: boolean; output: string } {
@@ -133,12 +151,20 @@ function run(command: string, args: readonly string[]): { ok: boolean; output: s
   }
 }
 
-/** Kill rate of one suite file against every mutant of one source file. */
+/** Kill rate of some suites against every mutant of one source file. */
 function mutationScore(
   sourceFile: string,
-  suiteFile: string,
+  suites: readonly string[],
 ): { killed: number; scored: number; survivors: string[] } {
   const original = readFileSync(sourceFile, 'utf8')
+  // A suite that fails on correct code "kills" every mutant. Refuse to score it.
+  const baseline = run('npx', vitestArgs(suites))
+  if (!baseline.ok) {
+    throw new Error(
+      `${suites.join(' ')} does not pass on the unmutated ${sourceFile}, so a kill rate ` +
+        `would mean nothing:\n${baseline.output.slice(0, 2000)}`,
+    )
+  }
   const sites = findMutants(sourceFile, original).filter((s) => !isKnownEquivalent(s))
   const survivors: string[] = []
   let killed = 0
@@ -146,7 +172,7 @@ function mutationScore(
   try {
     for (const site of sites) {
       writeFileSync(sourceFile, site.mutated)
-      const result = run('npx', vitestArgs(suiteFile))
+      const result = run('npx', vitestArgs(suites))
       if (result.ok) survivors.push(`${site.file}:${site.line} ${site.mutator.description}`)
       else killed++
     }
@@ -175,15 +201,13 @@ for (const target of targets) {
   const inputTokens = await countInputTokens(client, MODELS.author, SYSTEM, userPrompt)
   const estimate = estimateCost(MODELS.author, inputTokens, 20000)
   console.log(`input tokens: ${inputTokens}, estimated cost: $${estimate.toFixed(4)} (limit $${MAX_SPEND_USD.toFixed(2)})`)
+  tracker.ensureRoom(MODELS.author, inputTokens, MAX_OUTPUT_TOKENS)
 
   // Streamed because a whole test file is a long output and a non-streaming
   // request with a large max_tokens risks an HTTP timeout.
   const stream = client.messages.stream({
     model: MODELS.author,
-    // Thinking and text share this budget. At 16000 the file came back cut off
-    // mid-literal, and a truncated file looks exactly like a badly written one
-    // three steps later. Room, plus an explicit check below.
-    max_tokens: 32000,
+    max_tokens: MAX_OUTPUT_TOKENS,
     system: SYSTEM,
     thinking: { type: 'adaptive' },
     // A whole test file does not need maximum deliberation, and effort is
@@ -195,7 +219,10 @@ for (const target of targets) {
   tracker.record(MODELS.author, message.usage)
 
   if (message.stop_reason === 'max_tokens') {
-    console.log('  WARNING: output hit max_tokens and is truncated. Treating as a failed run.')
+    // It used to say this and then carry on scoring the truncated file.
+    console.log('  output hit max_tokens and is truncated. Recording a failed run.')
+    results.push({ target: target.name, truncated: true })
+    continue
   }
 
   const text = message.content
@@ -207,7 +234,8 @@ for (const target of targets) {
 
   // Gate 1: does it compile?
   //
-  // One repair round is allowed, with the compiler's own error fed back. That
+  // One repair round is allowed here, with the compiler's own error fed back,
+  // and one more below for tests that fail on correct code. That
   // is the workflow a person actually uses, and refusing it would measure
   // one-shot output rather than the thing being evaluated. What is not allowed
   // is me editing the file: the count of repair rounds is reported instead.
@@ -219,10 +247,12 @@ for (const target of targets) {
       .filter((line) => line.includes(target.output))
       .join('\n')
     console.log(`typecheck failed, sending the compiler error back:\n  ${errors.split('\n')[0]}`)
+    // The previous output goes back in as input, so the worst case grows.
+    tracker.ensureRoom(MODELS.author, inputTokens + MAX_OUTPUT_TOKENS + 2_000, MAX_OUTPUT_TOKENS)
 
     const repair = client.messages.stream({
       model: MODELS.author,
-      max_tokens: 32000,
+      max_tokens: MAX_OUTPUT_TOKENS,
       system: SYSTEM,
       thinking: { type: 'adaptive' },
       output_config: { effort: 'medium' },
@@ -253,7 +283,7 @@ for (const target of targets) {
   console.log(`typechecks: ${typecheck.ok ? 'yes' : 'no'} (repair rounds: ${repairRounds})`)
 
   // Gate 2: does it pass against correct code?
-  const passes = run('npx', vitestArgs(target.output))
+  const passes = run('npx', vitestArgs([target.output]))
   const countMatch = /Tests\s+(?:(\d+) failed \| )?(\d+) passed/.exec(passes.output)
   let failed = Number(countMatch?.[1] ?? 0)
   let passed = Number(countMatch?.[2] ?? 0)
@@ -267,9 +297,10 @@ for (const target of targets) {
   // that would make this a measurement of my editing.
   if (failed > 0) {
     console.log('  sending the test failures back for one repair round')
+    tracker.ensureRoom(MODELS.author, inputTokens + MAX_OUTPUT_TOKENS + 4_000, MAX_OUTPUT_TOKENS)
     const repair = client.messages.stream({
       model: MODELS.author,
-      max_tokens: 32000,
+      max_tokens: MAX_OUTPUT_TOKENS,
       system: SYSTEM,
       thinking: { type: 'adaptive' },
       output_config: { effort: 'medium' },
@@ -298,7 +329,7 @@ for (const target of targets) {
       .join('')
     writeFileSync(target.output, `${stripFence(repairedText)}\n`)
 
-    const retry = run('npx', vitestArgs(target.output))
+    const retry = run('npx', vitestArgs([target.output]))
     const retryMatch = /Tests\s+(?:(\d+) failed \| )?(\d+) passed/.exec(retry.output)
     failed = Number(retryMatch?.[1] ?? 0)
     passed = Number(retryMatch?.[2] ?? 0)
@@ -310,7 +341,7 @@ for (const target of targets) {
   let handWritten = { killed: 0, scored: 0, survivors: [] as string[] }
   if (typecheck.ok && failed === 0 && passed > 0) {
     console.log('scoring generated suite against mutants...')
-    generated = mutationScore(target.source, target.output)
+    generated = mutationScore(target.source, [target.output])
     console.log('scoring hand-written suite against the same mutants...')
     handWritten = mutationScore(target.source, target.handWritten)
 
