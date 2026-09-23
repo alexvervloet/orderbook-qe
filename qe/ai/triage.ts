@@ -9,8 +9,8 @@
  * "It agrees with my labels on N of 12, and the ones it misses are all of one
  * kind" is a claim that can be checked and acted on.
  *
- *   secrun npm run ai:triage
- *   secrun npm run ai:triage -- --model claude-sonnet-5
+ *   ANTHROPIC_API_KEY=... npm run ai:triage
+ *   ANTHROPIC_API_KEY=... npm run ai:triage -- --model claude-sonnet-5
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import {
@@ -185,9 +185,11 @@ console.log(
 
 console.log(`\n${tracker.summary()}`)
 
+// One file per model, so running the second model does not overwrite the first.
+const output = `qe/ai/results/triage-${model.replace(/^claude-/, '')}.json`
 mkdirSync('qe/ai/results', { recursive: true })
 writeFileSync(
-  'qe/ai/results/triage.json',
+  output,
   `${JSON.stringify(
     {
       generatedAt: new Date().toISOString(),
@@ -202,4 +204,4 @@ writeFileSync(
     2,
   )}\n`,
 )
-console.log('written to qe/ai/results/triage.json')
+console.log(`written to ${output}`)
