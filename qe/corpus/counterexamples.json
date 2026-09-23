@@ -1,0 +1,20 @@
+[
+  {
+    "id": "escrow-underflow-2026-09-23",
+    "summary": "Fee escrow taken once on the order total and released per fill underflows, stranding the trader's funds permanently.",
+    "foundBy": "qe/suites/consistency/offchain-onchain.test.ts, awkward-scale market",
+    "market": {
+      "quoteScale": "3",
+      "baseScale": "1000000",
+      "makerFeeBps": "2",
+      "takerFeeBps": "7"
+    },
+    "actions": [
+      { "trader": 0, "isBuy": false, "price": "98", "quantity": "1" },
+      { "trader": 0, "isBuy": true, "price": "99", "quantity": "2" },
+      { "trader": 0, "isBuy": false, "price": "98", "quantity": "1" },
+      { "trader": 0, "isBuy": false, "price": "98", "quantity": "1" }
+    ],
+    "reference": "docs/FAILURE-MODES.md#1-partial-fills-exhaust-the-fee-escrow-and-strand-funds"
+  }
+]
