@@ -20,8 +20,11 @@ let harness: Harness
 
 beforeEach(async () => {
   harness = await startHarness()
-  harness.exchange.deposit('alice', 10n ** 18n, 10n ** 24n)
-  harness.exchange.deposit('bob', 10n ** 18n, 10n ** 24n)
+  // Funded well past anything these tests trade. The exchange now checks
+  // affordability before matching, so an underfunded fixture shows up as a
+  // rejection rather than as the behaviour under test.
+  harness.exchange.deposit('alice', 10n ** 30n, 10n ** 36n)
+  harness.exchange.deposit('bob', 10n ** 30n, 10n ** 36n)
 })
 afterEach(async () => {
   await harness.stop()
@@ -140,7 +143,7 @@ describe('GET /book and /accounts/:id', () => {
 
     expect(alice.position).toBe('2')
     expect(bob.position).toBe('-2')
-    expect(BigInt(alice.base)).toBeGreaterThan(10n ** 18n)
-    expect(BigInt(bob.base)).toBeLessThan(10n ** 18n)
+    expect(BigInt(alice.base)).toBeGreaterThan(10n ** 30n)
+    expect(BigInt(bob.base)).toBeLessThan(10n ** 30n)
   })
 })
