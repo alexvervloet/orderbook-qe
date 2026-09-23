@@ -18,6 +18,7 @@ import {
   FEE_ACCOUNT,
   Ledger,
   notionalOf,
+  OverdraftError,
   type Market,
 } from '../../../sut/backend/ledger.ts'
 import { ProductionMatchingEngine } from '../../../sut/backend/engine/matching-engine.ts'
@@ -207,5 +208,80 @@ describe('deposit validation', () => {
     // the validation only looks at one of them.
     const ledger = new Ledger(MARKET)
     expect(() => ledger.deposit('alice', 0n, -1n)).toThrow(/non-negative/)
+  })
+})
+
+describe('the overdraft guard', () => {
+  const trade = (takerSide: 'buy' | 'sell', price: bigint, quantity: bigint) => ({
+    id: 't1',
+    takerOrderId: 'o1',
+    makerOrderId: 'o2',
+    takerAccountId: 'taker',
+    makerAccountId: 'maker',
+    takerSide,
+    price,
+    quantity,
+    sequence: 1,
+  })
+
+  it('allows a trade that spends a balance down to exactly zero', () => {
+    // The boundary. `held < amount` and `held <= amount` differ on exactly one
+    // input, and it is the one where a trader spends their whole balance, which
+    // is neither rare nor an error.
+    const ledger = new Ledger(MARKET)
+    const price = 100n
+    const quantity = 2n
+    const notional = notionalOf(MARKET, price, quantity)
+    const fee = feeOf(notional, MARKET.takerFeeBps)
+
+    ledger.deposit('taker', 0n, notional + fee)
+    ledger.deposit('maker', quantity * MARKET.baseScale, feeOf(notional, MARKET.makerFeeBps))
+
+    expect(() => ledger.settle(trade('buy', price, quantity))).not.toThrow()
+    expect(ledger.quoteOf('taker')).toBe(0n)
+    expect(ledger.baseOf('maker')).toBe(0n)
+  })
+
+  it('refuses a buyer one unit short of the notional', () => {
+    const ledger = new Ledger(MARKET)
+    const notional = notionalOf(MARKET, 100n, 2n)
+    const fee = feeOf(notional, MARKET.takerFeeBps)
+
+    ledger.deposit('taker', 0n, notional + fee - 1n)
+    ledger.deposit('maker', 2n * MARKET.baseScale, 10n ** 12n)
+
+    expect(() => ledger.settle(trade('buy', 100n, 2n))).toThrow(OverdraftError)
+  })
+
+  it('names the asset that is short, not just that something is', () => {
+    // The guard chooses which balance to check from the asset argument.
+    // Swapping that choice still throws, so a test that only asserts "throws"
+    // cannot see the mistake. It has to check which asset it named.
+    const ledger = new Ledger(MARKET)
+    ledger.deposit('taker', 0n, 10n ** 18n)
+    ledger.deposit('maker', 0n, 10n ** 18n) // plenty of quote, no base at all
+
+    try {
+      ledger.settle(trade('buy', 100n, 2n))
+      expect.unreachable('the seller holds no base')
+    } catch (error) {
+      expect(error).toBeInstanceOf(OverdraftError)
+      expect((error as OverdraftError).asset).toBe('base')
+      expect((error as OverdraftError).accountId).toBe('maker')
+    }
+  })
+
+  it('names quote when the buyer is the one who cannot pay', () => {
+    const ledger = new Ledger(MARKET)
+    ledger.deposit('taker', 10n ** 18n, 0n) // base but no quote
+    ledger.deposit('maker', 10n ** 18n, 10n ** 18n)
+
+    try {
+      ledger.settle(trade('buy', 100n, 2n))
+      expect.unreachable('the buyer holds no quote')
+    } catch (error) {
+      expect((error as OverdraftError).asset).toBe('quote')
+      expect((error as OverdraftError).accountId).toBe('taker')
+    }
   })
 })
