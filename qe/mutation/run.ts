@@ -170,8 +170,23 @@ let pendingRestore: { file: string; original: string } | null = null
 
 type SuiteResult = 'killed' | 'survived' | 'timeout' | 'interrupted'
 
+/**
+ * Forget any invariant failure Foundry persisted from the previous run.
+ *
+ * Foundry replays a persisted failing sequence before doing anything else. The
+ * runner never cleared it, so one failure, from a mutant or from a flaky check,
+ * replayed against every later mutant and the unmutated source alike. Every
+ * contract mutant after it "failed", and every one was scored as killed. The
+ * contract reported 57 of 57; with the cache cleared it scores 43 of 57.
+ */
+function clearPersistedFailures(target: Target): void {
+  if (!target.file.endsWith('.sol')) return
+  rmSync(`${target.cwd}/cache/invariant`, { recursive: true, force: true })
+}
+
 /** Returns how the suite reacted to the source currently on disk. */
 function runSuite(target: Target): SuiteResult {
+  clearPersistedFailures(target)
   try {
     execFileSync(target.command[0]!, target.command.slice(1), {
       cwd: target.cwd,
