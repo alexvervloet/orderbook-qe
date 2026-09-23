@@ -95,6 +95,26 @@ describe('POST /orders', () => {
     const book = BookResponse.parse((await harness.get('/book')).body)
     expect(book.asks[0]?.quantity).toBe(huge)
   })
+
+  it('counts only its own fills, not the stop cascade it set off', async () => {
+    harness.exchange.deposit('carol', 10n ** 30n, 10n ** 36n)
+    await harness.post('/orders', order({ accountId: 'bob', side: 'sell', price: '100', quantity: '1' }))
+    await harness.post('/orders', order({ accountId: 'bob', side: 'sell', price: '110', quantity: '1' }))
+    await harness.post(
+      '/orders',
+      order({ accountId: 'carol', type: 'stop_market', tif: 'IOC', price: null, triggerPrice: '100', quantity: '1' }),
+    )
+
+    // Alice's one lot trades at 100, which fires carol's stop, which buys
+    // bob's ask at 110. Both trades come back in the result; only one is hers.
+    const { body } = await harness.post('/orders', order({ quantity: '1' }))
+    const parsed = SubmitOrderResponse.parse(body)
+
+    expect(parsed.trades).toHaveLength(2)
+    expect(parsed.status).toBe('filled')
+    expect(parsed.filled).toBe('1')
+    expect(parsed.remaining).toBe('0')
+  })
 })
 
 describe('DELETE /orders/:id', () => {
