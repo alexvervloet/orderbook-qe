@@ -10,11 +10,14 @@
 import type { FastifyInstance } from 'fastify'
 import { WebSocket } from 'ws'
 import { buildServer, DEFAULT_MARKET, type ServerOptions } from '../../sut/backend/server.ts'
+import { Exchange } from '../../sut/backend/exchange.ts'
 import { MarketDataMessage } from '../../sut/backend/wire.ts'
 import type { Market } from '../../sut/backend/ledger.ts'
 
 export interface Harness {
   readonly app: FastifyInstance
+  /** The live exchange behind the server, for seeding state a test needs. */
+  readonly exchange: Exchange
   readonly baseUrl: string
   readonly market: Market
   get<T = unknown>(path: string): Promise<{ status: number; body: T }>
@@ -34,7 +37,8 @@ export interface MarketDataFeed {
 }
 
 export async function startHarness(options: ServerOptions = {}): Promise<Harness> {
-  const app = await buildServer(options)
+  const exchange = options.exchange ?? new Exchange(options.market ?? DEFAULT_MARKET)
+  const app = await buildServer({ ...options, exchange })
   await app.listen({ port: 0, host: '127.0.0.1' })
   const address = app.server.address()
   if (address === null || typeof address === 'string') throw new Error('no port assigned')
@@ -60,6 +64,7 @@ export async function startHarness(options: ServerOptions = {}): Promise<Harness
 
   return {
     app,
+    exchange,
     baseUrl,
     market: options.market ?? DEFAULT_MARKET,
     get: (path) => request('GET', path),

@@ -20,8 +20,8 @@ let harness: Harness
 
 beforeEach(async () => {
   harness = await startHarness()
-  harness.app.exchange.deposit('alice', 10n ** 18n, 10n ** 24n)
-  harness.app.exchange.deposit('bob', 10n ** 18n, 10n ** 24n)
+  harness.exchange.deposit('alice', 10n ** 18n, 10n ** 24n)
+  harness.exchange.deposit('bob', 10n ** 18n, 10n ** 24n)
 })
 afterEach(async () => {
   await harness.stop()
