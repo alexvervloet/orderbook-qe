@@ -63,11 +63,18 @@ afterwards whether a value was affected.
 Division cannot always be exact, so fees need a rounding rule. Rounding is
 always **up**, in the exchange's favour, via `ceilDiv`.
 
-Round-to-nearest is the intuitive choice and is wrong here. Over enough trades
-it produces occasions where the fee account pays out more than it took in, and a
-fee account that can go negative is a hole in the balance sheet nobody is
-watching. Rounding up costs each client at most one indivisible unit more than
-the exact fee.
+Round-to-nearest is the intuitive choice, and its failure is quieter than it
+looks. The fee account only ever receives, so no rounding rule can make it go
+negative. What round-to-nearest does is charge less than the exact fee about
+half the time, so the exchange undercharges on every trade whose fee falls just
+below a half unit, and a large volume of small trades can pay no fee at all.
+Rounding up has the opposite property: every trade pays at least its exact fee,
+and each client pays at most one indivisible unit more.
+
+Onchain the direction matters for a second reason. Escrow is taken before a
+trade and released after it, and the escrowed fee must never be less than the
+fee finally charged. Rounding every fee up, and escrowing a ceiling per lot, is
+what guarantees that.
 
 The rule is asserted as a property, not documented and hoped for:
 
@@ -84,7 +91,9 @@ Getting the units right is necessary and not sufficient. The escrow bug in
 [FAILURE-MODES.md](FAILURE-MODES.md) was entirely integer arithmetic, correctly
 rounded, and still wrong: the fee was rounded up once on an order total and then
 released rounded up per fill, and `ceil(a + b)` is not `ceil(a) + ceil(b)`. It
-stranded funds permanently.
+stranded funds permanently. The first fix made the same mistake the other way
+round, locking per lot and releasing per fill, and left a unit or two behind on
+every multi-lot fill.
 
 Integer arithmetic removes a class of bug. It does not remove the need to check
 that two calculations of the same quantity agree.
