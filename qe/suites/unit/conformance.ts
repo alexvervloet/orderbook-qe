@@ -15,7 +15,6 @@ import type { SubmitResult, Trade } from '../../../spec/types.ts'
 import {
   buy,
   marketBuy,
-  marketSell,
   resetOrderIds,
   sell,
   stopLimit,

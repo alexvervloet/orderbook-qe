@@ -11,7 +11,7 @@
  * the counterexample.
  */
 import fc from 'fast-check'
-import { describe, expect, it } from 'vitest'
+import { describe, it } from 'vitest'
 import { ProductionMatchingEngine } from '../../../sut/backend/engine/matching-engine.ts'
 import { ReferenceEngine } from '../../model/reference-engine.ts'
 import { ACCOUNTS, commandSequence, describeCommands, type Command } from '../../framework/commands.ts'

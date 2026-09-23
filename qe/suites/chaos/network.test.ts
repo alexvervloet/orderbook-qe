@@ -79,10 +79,15 @@ describe('network faults', () => {
 
   describeIfAvailable()('under added latency', () => {
     it('still returns a correct result, just later', async () => {
+      // Jitter is zero on purpose. My first version used 50ms of jitter and
+      // then asserted a hard floor at the nominal latency, which fails roughly
+      // half the time by construction. A fault-injection test that is itself
+      // non-deterministic is the exact thing docs/CI-POLICY.md says to delete.
+      const INJECTED_MS = 400
       await proxy.addToxic({
         name: 'slow',
         type: 'latency',
-        attributes: { latency: 400, jitter: 50 },
+        attributes: { latency: INJECTED_MS, jitter: 0 },
       })
       try {
         const started = Date.now()
@@ -90,7 +95,11 @@ describe('network faults', () => {
         const elapsed = Date.now() - started
 
         expect(response.status).toBe(201)
-        expect(elapsed).toBeGreaterThanOrEqual(400)
+        // Generous margin below the nominal figure. The claim being made is
+        // "the toxic was applied", and the baseline is single-digit
+        // milliseconds, so anything near 400 proves it without asserting on
+        // scheduler precision.
+        expect(elapsed).toBeGreaterThan(INJECTED_MS * 0.75)
         // Correctness must not depend on timing. An exchange that matches
         // differently when the network is slow has a race, not a latency issue.
         const body = (await response.json()) as { status: string; remaining: string }
