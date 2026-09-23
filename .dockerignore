@@ -1,0 +1,9 @@
+node_modules
+coverage
+qe
+.git
+sut/contracts/out
+sut/contracts/cache
+sut/contracts/lib
+playwright-report
+test-results
