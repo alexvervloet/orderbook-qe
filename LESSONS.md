@@ -415,3 +415,31 @@ The fixture assertions I added while chasing this are worth keeping regardless:
 the fixture used to swallow failed setup transactions, and would have reported
 "the contract disagrees with the engine" for an unfunded account. That was a
 real fault, just not this one.
+
+## Two engines that agreed on a crossed book
+
+**Expected.** The differential test compares every observable after every
+command, so a matching bug in either engine shows up as a divergence.
+
+**What happened.** An audit found a book with a bid at 105 resting over an ask
+at 104. Both engines ran the stop cascade before resting the taker's remainder,
+so a triggered stop_limit rested on the far side and the remainder then rested
+through it. Both engines also let each fired stop start a cascade of its own,
+which ran a stop triggered later ahead of one triggered earlier. Thousands of
+differential runs passed, because the two engines were wrong in the same way.
+The conformance test "leaves the book uncrossed at rest" only submitted orders
+that did not cross, so it could not fail either.
+
+A new property that checks the book on each engine alone, with no oracle,
+failed on the first run in under a hundred milliseconds.
+
+**Fix.** Each order is matched and rested before any stop it triggered runs,
+and stops fire in rounds. The outcome returned describes the order as it
+stands on return, since a stop can fill the order that triggered it.
+
+**Next time.** A differential test checks that two implementations agree. It
+says nothing about whether they are right, and two implementations written by
+the same person from the same spec are exactly the ones likely to share a
+misreading. Every invariant the spec states in one sentence, like "the book is
+never crossed at rest", deserves a property of its own that no oracle can
+talk it out of.
