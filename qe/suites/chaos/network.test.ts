@@ -74,7 +74,12 @@ describe('network faults', () => {
           `  docker compose --profile chaos up -d --wait`,
       )
     }
-    expect(typeof available).toBe('boolean')
+    // Locally a missing proxy is a skip. Where the proxy is supposed to exist,
+    // it is a failure: the nightly chaos job once skipped all five of these
+    // every night because it never started the compose profile, and the job
+    // stayed green. The old assertion here, that `available` is a boolean,
+    // could not fail at all.
+    if (process.env.REQUIRE_TOXIPROXY === '1') expect(available).toBe(true)
   })
 
   describeIfAvailable()('under added latency', () => {
