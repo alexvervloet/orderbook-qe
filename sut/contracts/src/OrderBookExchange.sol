@@ -165,6 +165,9 @@ contract OrderBookExchange {
         uint256 notionalAtLimit = _notional(quantity, price);
         uint256 feeLock = uint256(quantity) * _feePerLot(price);
         if (isBuy) {
+            // A notional that fits can still overflow once the fee escrow is
+            // added to it, which panicked. Refused by name, like the notional.
+            if (notionalAtLimit > type(uint256).max - feeLock) revert NotionalOverflow();
             uint256 lock = notionalAtLimit + feeLock;
             if (availableQuote[msg.sender] < lock) revert InsufficientBalance();
             availableQuote[msg.sender] -= lock;
