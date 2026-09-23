@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ExchangeTest} from "./Base.t.sol";
 import {OrderBookExchange} from "../src/OrderBookExchange.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 /// @dev Unit and fuzz tests. The invariant suite lives in Invariant.t.sol.
 contract OrderBookExchangeTest is ExchangeTest {
@@ -285,6 +286,93 @@ contract OrderBookExchangeTest is ExchangeTest {
         assertEq(bidDepth, 5);
     }
 
+    function test_RefusesASellThatWouldRestThroughTheStepLimit() public {
+        uint256 steps = exchange.MAX_MATCH_STEPS();
+        for (uint256 i = 0; i <= steps; i++) {
+            _place(bob, true, 100, 1);
+        }
+
+        // The sell side of the same check: bids still at exactly the limit.
+        vm.prank(alice);
+        vm.expectRevert(OrderBookExchange.MatchStepLimitReached.selector);
+        exchange.placeLimitOrder(false, 100, uint128(steps + 1));
+    }
+
+    // ---------------------------------------------------- exact balances
+
+    /**
+     * Every balance check is `<`, so spending a balance down to exactly zero
+     * must work. A `<=` there refuses a trader who can pay to the unit, and
+     * mutation testing showed no test would notice.
+     */
+    function test_WithdrawsAnEntireBalance() public {
+        uint256 baseBalance = exchange.availableBase(alice);
+        uint256 quoteBalance = exchange.availableQuote(alice);
+
+        vm.startPrank(alice);
+        exchange.withdrawBase(baseBalance);
+        exchange.withdrawQuote(quoteBalance);
+        vm.stopPrank();
+
+        assertEq(exchange.availableBase(alice), 0);
+        assertEq(exchange.availableQuote(alice), 0);
+    }
+
+    function test_BuysWithExactlyEnoughQuote() public {
+        address dave = address(0xDA7E);
+        // One lot at 100: the notional, plus the worst-case fee per lot.
+        uint256 lock = 100 * QUOTE_SCALE + (100 * QUOTE_SCALE * TAKER_FEE_BPS + 9_999) / 10_000;
+        _fundExactly(dave, 0, lock);
+
+        _place(dave, true, 100, 1);
+
+        assertEq(exchange.availableQuote(dave), 0);
+        assertEq(exchange.lockedQuote(dave), lock);
+    }
+
+    function test_SellsWithExactlyEnoughBaseAndFee() public {
+        address dave = address(0xDA7E);
+        uint256 feeLock = (100 * QUOTE_SCALE * TAKER_FEE_BPS + 9_999) / 10_000;
+        _fundExactly(dave, BASE_SCALE, feeLock);
+
+        _place(dave, false, 100, 1);
+
+        assertEq(exchange.availableBase(dave), 0);
+        assertEq(exchange.availableQuote(dave), 0);
+    }
+
+    // ------------------------------------------------------ settlement
+
+    /// A maker buyer gets back the escrow above the fee it actually paid.
+    function test_MakerBuyerPaysTheMakerFeeAndNoMore() public {
+        uint256 before = exchange.availableQuote(alice);
+        _place(alice, true, 100, 1);
+        _place(bob, false, 100, 1);
+
+        uint256 notional = 100 * QUOTE_SCALE;
+        uint256 makerFee = (notional * MAKER_FEE_BPS + 9_999) / 10_000;
+        assertEq(exchange.availableQuote(alice), before - notional - makerFee);
+        assertEq(exchange.lockedQuote(alice), 0);
+    }
+
+    /// Matching stops the moment the taker is filled, with one event per fill.
+    function test_StopsMatchingOnceTheTakerIsFilled() public {
+        _place(bob, false, 100, 1);
+        _place(bob, false, 100, 1);
+
+        vm.recordLogs();
+        _place(alice, true, 100, 1);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        uint256 traded = 0;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == OrderBookExchange.Traded.selector) traded++;
+        }
+        assertEq(traded, 1, "a filled taker kept matching");
+        (uint128 depth,,) = exchange.levelAt(false, 100);
+        assertEq(depth, 1);
+    }
+
     // -------------------------------------------------------------- events
 
     /// Offchain indexers join trades to orders by id. Zero joins to nothing.
@@ -300,6 +388,15 @@ contract OrderBookExchangeTest is ExchangeTest {
     }
 
     // -------------------------------------------------------------- helpers
+
+    function _fundExactly(address trader, uint256 baseAmount, uint256 quoteAmount) internal {
+        base.mint(trader, baseAmount);
+        quote.mint(trader, quoteAmount);
+        vm.startPrank(trader);
+        exchange.depositBase(baseAmount);
+        exchange.depositQuote(quoteAmount);
+        vm.stopPrank();
+    }
 
     function _orderExists(uint64 orderId) internal view returns (address, uint128, bool) {
         (address trader, uint128 price,,,,) = exchange.orders(orderId);
