@@ -1,0 +1,107 @@
+# Runs on every pull request. Budget: five minutes from push to verdict.
+# The tiering and the measured cost of each job are in docs/CI-POLICY.md.
+
+name: pull request
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: lint and typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  typescript:
+    name: typescript suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.3
+      - run: npm ci
+      # The consistency suite deploys the real bytecode, so the contracts must
+      # be built before the TypeScript tests run, not alongside them.
+      - name: build contracts
+        run: forge build
+        working-directory: sut/contracts
+      - run: npm run test:unit
+      - run: npm run test:property
+      - run: npm run test:contract
+      - run: npm run test:consistency
+      - name: fail if any test was skipped
+        run: npm run check:no-skips
+
+  solidity:
+    name: solidity suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.3
+      - name: forge test
+        run: forge test -vv
+        working-directory: sut/contracts
+      - name: gas report
+        run: forge test --gas-report > gas-report.txt
+        working-directory: sut/contracts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gas-report
+          path: sut/contracts/gas-report.txt
+
+  container:
+    name: container builds and serves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: orderbook-qe:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: boot and trade
+        run: |
+          docker run -d --name ci -p 8080:8080 orderbook-qe:ci
+          for i in $(seq 1 30); do
+            [ "$(docker inspect --format='{{.State.Health.Status}}' ci)" = healthy ] && break
+            sleep 1
+          done
+          # A healthcheck that only proves the process is up proves very little.
+          # This asserts the exchange actually matched an order.
+          curl -fsS -X POST localhost:8080/orders \
+            -H 'content-type: application/json' \
+            -d '{"accountId":"maker-1","side":"sell","price":"100","quantity":"3"}' > /dev/null
+          curl -fsS localhost:8080/book | grep -q '"quantity":"3"'
+          docker rm -f ci
