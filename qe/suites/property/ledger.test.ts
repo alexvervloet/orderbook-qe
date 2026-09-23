@@ -110,22 +110,29 @@ describe('ledger conservation', () => {
             const sellerBefore = ledger.baseOf(seller)
             const notional = notionalOf(MARKET, trade.price, trade.quantity)
             const buyerQuoteBefore = ledger.quoteOf(buyer)
+            const sellerQuoteBefore = ledger.quoteOf(seller)
 
             ledger.settle(trade)
+
+            // Each side pays the fee for its own role, per spec/LEDGER.md.
+            const takerFee = feeOf(notional, MARKET.takerFeeBps)
+            const makerFee = feeOf(notional, MARKET.makerFeeBps)
+            const buyerFee = trade.takerSide === 'buy' ? takerFee : makerFee
+            const sellerFee = trade.takerSide === 'buy' ? makerFee : takerFee
 
             const baseAmount = trade.quantity * MARKET.baseScale
             if (buyer === seller) {
               // A self-trade nets to nothing in base, and still costs both fees.
               expect(ledger.baseOf(buyer)).toBe(buyerBefore)
+              expect(ledger.quoteOf(buyer)).toBe(buyerQuoteBefore - takerFee - makerFee)
             } else {
               expect(ledger.baseOf(buyer)).toBe(buyerBefore + baseAmount)
               expect(ledger.baseOf(seller)).toBe(sellerBefore - baseAmount)
-              // The buyer pays the notional plus exactly one fee, no more.
-              const paid = buyerQuoteBefore - ledger.quoteOf(buyer)
-              expect(paid).toBeGreaterThanOrEqual(notional)
-              expect(paid - notional).toBeLessThanOrEqual(
-                feeOf(notional, MARKET.takerFeeBps),
-              )
+              // Exact, both sides. The earlier version bounded the buyer's
+              // payment by the taker fee and never looked at the seller, so a
+              // ledger that charged each side the other's fee passed.
+              expect(ledger.quoteOf(buyer)).toBe(buyerQuoteBefore - notional - buyerFee)
+              expect(ledger.quoteOf(seller)).toBe(sellerQuoteBefore + notional - sellerFee)
             }
           }
         }
