@@ -287,12 +287,17 @@ never arrives. This one is the least comfortable of the three: the function is
 not equivalent, its use is, and if anything else ever calls `cmpAsc` the
 registry entry becomes wrong. It is recorded with that caveat attached.
 
-Of the seven genuine survivors, four were real gaps worth closing: an overdraft
-guard that nothing tested at the exact-balance boundary, the guard's choice of
-*which* asset to report, and a stop order with a null trigger price that no
-builder could produce. One was not a gap at all: `isEmpty` on the book side was
+Of the seven genuine survivors, the real gaps worth closing included an
+overdraft guard that nothing tested at the exact-balance boundary, the guard's
+choice of *which* asset to report, and a stop order with a null trigger price
+that no builder could produce. (This entry first said four gaps and listed
+three; the fourth is not recoverable from the record.) One was not a gap at all: `isEmpty` on the book side was
 dead code, defined and never called. The right response to a survivor on unused
 code is to delete the code.
+
+These numbers are from a run that, as a later entry records, also counted
+generic type brackets as mutants and excused mutants by line rather than by
+operator. The lessons stand; the figures are of their time.
 
 **Next time.** Budget the triage, not just the run. The run took twenty minutes
 unattended; classifying twenty survivors took longer and was the part that
