@@ -160,4 +160,31 @@ contract FeeRoundingTest is Test {
         assertEq(exchange.lockedBase(alice), 0, "maker base stranded");
         assertEq(exchange.lockedBase(bob), 0, "taker base stranded");
     }
+
+    // ---------------------------------------------- the overflow boundary
+
+    /// Price and quantity whose product is exactly type(uint256).max / 3, the
+    /// largest notional this market can express. Both fit a uint128.
+    uint128 internal constant EDGE_PRICE = 246024705328910866499275782536449822081;
+    uint128 internal constant EDGE_QUANTITY = 156884094333146401161031195599647513045;
+
+    /**
+     * A buy whose notional just fits still has to add its fee escrow, and that
+     * sum overflowed: an arithmetic panic, the exact failure NotionalOverflow
+     * exists to replace. Found while writing a test to kill a surviving mutant
+     * on the overflow guard, one line away.
+     */
+    function test_BuyAtTheNotionalLimitIsRefusedByName() public {
+        vm.prank(alice);
+        vm.expectRevert(OrderBookExchange.NotionalOverflow.selector);
+        exchange.placeLimitOrder(true, EDGE_PRICE, EDGE_QUANTITY);
+    }
+
+    /// The same notional on a sell is priceable, so it is refused for the
+    /// real reason, the missing base, and not as an overflow.
+    function test_SellAtTheNotionalLimitIsPricedNotRefused() public {
+        vm.prank(alice);
+        vm.expectRevert(OrderBookExchange.InsufficientBalance.selector);
+        exchange.placeLimitOrder(false, EDGE_PRICE, EDGE_QUANTITY);
+    }
 }
