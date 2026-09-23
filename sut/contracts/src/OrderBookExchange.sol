@@ -30,6 +30,7 @@ contract OrderBookExchange {
     error OrderNotFound();
     error TransferFailed();
     error NotionalOverflow();
+    error MatchStepLimitReached();
 
     // ------------------------------------------------------------- events
 
@@ -69,7 +70,8 @@ contract OrderBookExchange {
 
     // ------------------------------------------------------------- storage
 
-    /// @notice Cap on levels walked in one call, so gas stays bounded.
+    /// @notice Cap on fills in one call, so gas stays bounded. An order that
+    /// would still cross after this many fills is refused; see _match.
     uint256 public constant MAX_MATCH_STEPS = 64;
     uint256 private constant BPS = 10_000;
 
@@ -249,6 +251,16 @@ contract OrderBookExchange {
             if (maker.remaining == 0) {
                 _unlink(makerSide, makerPrice, makerId);
                 delete orders[makerId];
+            }
+        }
+
+        // Out of steps with crossable liquidity left. Resting the remainder
+        // here would put it through the orders not yet reached and cross the
+        // book, so refuse the whole order instead. The caller can split it.
+        if (remaining > 0) {
+            uint128 next = bestPrice[makerSide];
+            if (next != 0 && (takerIsBuy ? next <= limitPrice : next >= limitPrice)) {
+                revert MatchStepLimitReached();
             }
         }
     }
