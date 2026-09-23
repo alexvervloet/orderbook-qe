@@ -88,7 +88,17 @@ export async function startChain(): Promise<LocalChain> {
 
   const rpcUrl = `http://127.0.0.1:${port}`
   const transport = http(rpcUrl)
-  const publicClient = createPublicClient({ chain: foundry, transport }) as PublicClient
+  /**
+   * Anvil mines instantly, so viem's 4-second default polling interval is
+   * dead time: every receipt wait costs one full tick. Fifteen setup
+   * transactions came to sixty seconds of a test doing nothing. See LESSONS.md.
+   */
+  const pollingInterval = Number(process.env.CHAIN_POLL_MS ?? 20)
+  const publicClient = createPublicClient({
+    chain: foundry,
+    transport,
+    pollingInterval,
+  }) as PublicClient
 
   // Anvil takes a moment to bind. Poll rather than sleep a fixed amount, so a
   // slow machine does not produce a flaky suite.
@@ -108,7 +118,8 @@ export async function startChain(): Promise<LocalChain> {
 
   const accounts = ANVIL_KEYS.map((key) => privateKeyToAccount(key))
   const wallets = accounts.map(
-    (account) => createWalletClient({ account, chain: foundry, transport }) as WalletClient,
+    (account) =>
+      createWalletClient({ account, chain: foundry, transport, pollingInterval }) as WalletClient,
   )
 
   const rpc = async (method: string, params: unknown[] = []): Promise<unknown> => {
