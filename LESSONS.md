@@ -443,3 +443,32 @@ the same person from the same spec are exactly the ones likely to share a
 misreading. Every invariant the spec states in one sentence, like "the book is
 never crossed at rest", deserves a property of its own that no oracle can
 talk it out of.
+
+## The invariant suite failed one run in five, then every run
+
+**Expected.** `afterInvariant` asserting "this run placed an order" guards
+against a handler that swallows every call, and a healthy run always places
+something.
+
+**What happened.** A healthy run does not always place something. A run whose
+calls are all withdrawals places nothing, and so does one that withdraws a
+trader dry before trying to trade. Fifteen runs of the untouched suite failed
+three times. Foundry then persists the failing sequence under `cache/invariant`
+and replays it first on every later run, so after one bad draw the suite failed
+fifteen times out of fifteen and looked like a regression in whatever had just
+changed. It took a comparison against the previous commit, in a clean
+worktree, to see it was neither.
+
+I also committed through it. The commit chain gated on a `grep` for the
+summary line, and grep succeeds when the line says FAIL just as well as when it
+says ok.
+
+**Fix.** The question the check was asking, "does the handler trade when it
+can", is deterministic, so it is now a unit test that drives two funded orders
+through the handler and requires them to trade. Zero failures in fifteen runs.
+
+**Next time.** A per-run assertion about what a random run did is a statement
+about the generator, not the contract, and it fails at whatever rate the
+generator happens to produce the dull case. And after an invariant failure,
+check for "Replayed invariant failure from persisted file" before believing
+the next result.
