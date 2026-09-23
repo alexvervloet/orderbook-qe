@@ -65,6 +65,25 @@ export class SpendTracker {
     return this.#spent
   }
 
+  /**
+   * Refuse a call before it is made if its worst case would break the limit.
+   *
+   * `record` alone only notices afterwards. One test-generation call with a
+   * 32,000-token output budget can cost $0.32 on its own, so a guard that
+   * checks after the call lets the first call blow straight through a $0.25
+   * limit and then complains about it.
+   */
+  ensureRoom(model: string, inputTokens: number, maxOutputTokens: number): void {
+    const worstCase = this.#spent + estimateCost(model, inputTokens, maxOutputTokens)
+    if (worstCase > this.#limit) {
+      throw new Error(
+        `spend guard: this call could bring the run to $${worstCase.toFixed(4)}, over the ` +
+          `$${this.#limit.toFixed(2)} limit, so it was not sent. Raise AI_MAX_SPEND_USD ` +
+          'deliberately if this run is meant to cost more.',
+      )
+    }
+  }
+
   record(model: string, usage: { input_tokens: number; output_tokens: number }): void {
     this.#spent += estimateCost(model, usage.input_tokens, usage.output_tokens)
     if (this.#spent > this.#limit) {
