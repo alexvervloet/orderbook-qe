@@ -246,6 +246,59 @@ contract OrderBookExchangeTest is ExchangeTest {
         assertLe(spent, atLimit + maxFee);
     }
 
+    // --------------------------------------------------------- step limit
+
+    /**
+     * The match loop stops after MAX_MATCH_STEPS fills to bound gas. It used
+     * to rest whatever was left at the order's limit, straight through the
+     * asks it had not reached yet: a crossed book, onchain, where nobody can
+     * patch it up after the fact.
+     */
+    function test_RefusesAnOrderThatWouldRestThroughTheStepLimit() public {
+        uint256 steps = exchange.MAX_MATCH_STEPS();
+        for (uint256 i = 0; i <= steps; i++) {
+            _place(bob, false, 100, 1);
+        }
+
+        vm.prank(alice);
+        vm.expectRevert(OrderBookExchange.MatchStepLimitReached.selector);
+        exchange.placeLimitOrder(true, 100, uint128(steps + 1));
+
+        // Refused whole: the book is untouched and the ask side is still best.
+        (uint128 askDepth,,) = exchange.levelAt(false, 100);
+        assertEq(askDepth, steps + 1);
+        assertEq(exchange.bestPrice(true), 0, "nothing rested on the bid side");
+    }
+
+    function test_FillsRightUpToTheStepLimit() public {
+        uint256 steps = exchange.MAX_MATCH_STEPS();
+        for (uint256 i = 0; i < steps; i++) {
+            _place(bob, false, 100, 1);
+        }
+
+        // Exactly as many fills as the limit allows, and the book is then
+        // empty, so the remainder rests without crossing anything.
+        _place(alice, true, 100, uint128(steps + 5));
+
+        assertEq(exchange.bestPrice(false), 0, "every ask was taken");
+        (uint128 bidDepth,,) = exchange.levelAt(true, 100);
+        assertEq(bidDepth, 5);
+    }
+
+    // -------------------------------------------------------------- events
+
+    /// Offchain indexers join trades to orders by id. Zero joins to nothing.
+    function test_TradedCarriesTheTakerOrderId() public {
+        uint64 makerId = _place(bob, false, 100, 1);
+        uint64 expectedTakerId = exchange.nextOrderId();
+
+        vm.expectEmit(true, true, false, true, address(exchange));
+        emit OrderBookExchange.Traded(expectedTakerId, makerId, true, 100, 1);
+        uint64 takerId = _place(alice, true, 100, 1);
+
+        assertEq(takerId, expectedTakerId, "a filled order still reports its id");
+    }
+
     // -------------------------------------------------------------- helpers
 
     function _orderExists(uint64 orderId) internal view returns (address, uint128, bool) {
