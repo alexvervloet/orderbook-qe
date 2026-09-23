@@ -411,6 +411,53 @@ export function describeMatchingEngine(name: string, create: Factory): void {
         ])
         expect(engine.pendingStops()).toEqual([])
       })
+
+      it('rests the triggering order before the stop it triggered runs', () => {
+        // Found by the book-invariant property, not by the differential test:
+        // both engines let the stop rest first, then rested the taker through
+        // it, leaving a bid at 105 over an ask at 104.
+        engine.submit(sell(100n, 5n, { accountId: 'maker' }))
+        engine.submit(stopLimit('sell', 100n, 104n, 3n, { accountId: 'stopper' }))
+
+        const result = engine.submit(buy(105n, 10n, { id: 'taker', accountId: 'taker' }))
+
+        // The taker rests 5 at 105, then the stop sells into it at the maker price.
+        expect(priced(result.trades)).toEqual([
+          [100n, 5n],
+          [105n, 3n],
+        ])
+        expect(engine.snapshot()).toEqual({
+          bids: [{ price: 105n, quantity: 2n, orderCount: 1 }],
+          asks: [],
+        })
+      })
+
+      it('reports the outcome after the stops it triggered, not when it rested', () => {
+        engine.submit(sell(100n, 5n, { accountId: 'maker' }))
+        engine.submit(stopLimit('sell', 100n, 104n, 5n, { accountId: 'stopper' }))
+
+        const result = engine.submit(buy(105n, 10n, { accountId: 'taker' }))
+
+        // It rested 5, and the stop it fired then sold into all 5. Telling
+        // the client "resting 5" would describe an order that no longer exists.
+        expect(result.outcome).toEqual({ kind: 'filled' })
+        expect(engine.snapshot()).toEqual({ bids: [], asks: [] })
+      })
+
+      it('fires stops in rounds, so a later trigger never jumps the queue', () => {
+        engine.submit(sell(100n, 1n, { accountId: 'm' }))
+        engine.submit(sell(110n, 1n, { accountId: 'm' }))
+        engine.submit(sell(120n, 10n, { accountId: 'm' }))
+        engine.submit(stopMarket('buy', 100n, 1n, { id: 'S1', accountId: 'p' }))
+        engine.submit(stopMarket('buy', 100n, 1n, { id: 'S2', accountId: 'q' }))
+        engine.submit(stopMarket('buy', 110n, 1n, { id: 'S3', accountId: 'r' }))
+
+        const result = engine.submit(marketBuy(1n, { id: 'T', accountId: 't' }))
+
+        // S1 and S2 are both due at 100. S1's fill at 110 makes S3 due, but S3
+        // waits for the next round, behind S2. SEMANTICS.md section 9.
+        expect(result.trades.map((t) => t.takerOrderId)).toEqual(['T', 'S1', 'S2', 'S3'])
+      })
     })
 
     // ------------------------------------------------ section 10, reduce-only
