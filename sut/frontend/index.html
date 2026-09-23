@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Order book</title>
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body>
+    <main>
+      <h1>ETH-USDC</h1>
+
+      <section aria-labelledby="book-heading">
+        <h2 id="book-heading">Book</h2>
+        <!--
+          data-testid attributes exist so the end-to-end tests can select
+          without depending on layout or copy. A test that finds a row by its
+          CSS class breaks when someone restyles the page, and then gets
+          deleted rather than fixed.
+        -->
+        <div class="book">
+          <table data-testid="asks">
+            <caption>Asks</caption>
+            <thead>
+              <tr><th scope="col">Price</th><th scope="col">Size</th><th scope="col">Orders</th></tr>
+            </thead>
+            <tbody id="asks-body"></tbody>
+          </table>
+          <table data-testid="bids">
+            <caption>Bids</caption>
+            <thead>
+              <tr><th scope="col">Price</th><th scope="col">Size</th><th scope="col">Orders</th></tr>
+            </thead>
+            <tbody id="bids-body"></tbody>
+          </table>
+        </div>
+        <p class="meta">
+          feed sequence <span data-testid="sequence">0</span>
+          <span data-testid="connection" class="status">connecting</span>
+        </p>
+      </section>
+
+      <section aria-labelledby="order-heading">
+        <h2 id="order-heading">Place an order</h2>
+        <form id="order-form" data-testid="order-form">
+          <label>Account <input name="accountId" value="taker-1" data-testid="account" required /></label>
+          <label>Side
+            <select name="side" data-testid="side">
+              <option value="buy">Buy</option>
+              <option value="sell">Sell</option>
+            </select>
+          </label>
+          <label>Price <input name="price" value="100" data-testid="price" inputmode="numeric" required /></label>
+          <label>Size <input name="quantity" value="1" data-testid="quantity" inputmode="numeric" required /></label>
+          <button type="submit" data-testid="submit">Submit</button>
+        </form>
+        <p data-testid="order-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section aria-labelledby="account-heading">
+        <h2 id="account-heading">Account</h2>
+        <dl>
+          <dt>Base</dt><dd data-testid="balance-base">-</dd>
+          <dt>Quote</dt><dd data-testid="balance-quote">-</dd>
+          <dt>Position</dt><dd data-testid="position">-</dd>
+        </dl>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

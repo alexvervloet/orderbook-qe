@@ -1,0 +1,21 @@
+:root { color-scheme: light dark; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+body { margin: 0; padding: 1.5rem; max-width: 60rem; }
+h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+h2 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
+.book { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+caption { text-align: left; font-size: 0.8rem; opacity: 0.7; padding-bottom: 0.25rem; }
+th, td { text-align: right; padding: 0.15rem 0.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+th:first-child, td:first-child { text-align: left; }
+[data-testid="asks"] td:first-child { color: #c0392b; }
+[data-testid="bids"] td:first-child { color: #1e8449; }
+.meta { font-size: 0.8rem; opacity: 0.7; }
+.status { margin-left: 1rem; }
+.status[data-state="open"]::before { content: "● "; color: #1e8449; }
+.status[data-state="closed"]::before { content: "● "; color: #c0392b; }
+form { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; }
+label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; }
+input, select, button { font: inherit; padding: 0.3rem 0.5rem; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; font-variant-numeric: tabular-nums; }
+dt { opacity: 0.7; }
+dd { margin: 0; }
