@@ -30,10 +30,16 @@ fee rounding error in the wrong direction is found by an auditor, or never.
   reconciliation reveals it.
 - 3, visible in aggregate: metrics drift, someone eventually asks.
 - 1, loud: errors, crashes, failed requests.
+- 4 and 2 sit between their neighbours.
 
 **Likelihood** is how much the code moves and how much concurrency it carries.
 
-Priority is blast radius x detection difficulty x likelihood. The ranking below
+- 5, rewritten often, or concurrent by nature.
+- 3, changes with features, touched most months.
+- 1, written once and rarely touched.
+
+Priority is blast radius x detection difficulty x likelihood, and where two
+scores tie, the one with the larger blast radius goes first. The ranking below
 is the result, not an intuition written up afterwards.
 
 ## The ranking
@@ -47,8 +53,8 @@ is the result, not an intuition written up afterwards.
 | 5 | Order lifecycle accounting: partial fills, remainders | 4 | 4 | 4 | 64 | **Protect first** |
 | 6 | Reduce-only and position limits | 4 | 4 | 3 | 48 | **Protect first** |
 | 7 | WebSocket book feed: sequencing, gaps, reconnect | 3 | 4 | 4 | 48 | Second |
-| 8 | Reorg and settlement reversal | 5 | 3 | 2 | 30 | Second |
-| 9 | Stop-order triggering and cascades | 4 | 3 | 2 | 24 | Second |
+| 8 | Stop-order triggering and cascades | 4 | 5 | 2 | 40 | Second |
+| 9 | Reorg and settlement reversal | 5 | 3 | 2 | 30 | Second |
 | 10 | Self-trade prevention | 3 | 4 | 2 | 24 | Second |
 | 11 | Iceberg display and refresh | 3 | 4 | 2 | 24 | Second |
 | 12 | Behaviour under load: latency, backpressure | 2 | 3 | 4 | 24 | Second |
@@ -59,7 +65,7 @@ is the result, not an intuition written up afterwards.
 | 17 | Historical data and charting | 1 | 2 | 4 | 8 | Later |
 | 18 | Admin and operational tooling | 2 | 2 | 2 | 8 | Later |
 
-## The first 20 to 30 per cent
+## The first third
 
 Rows 1 to 6 are where the work goes before a public testnet. They are six of
 eighteen paths, a third by count and considerably less than a third by surface,
@@ -84,27 +90,37 @@ within minutes. That is a bad hour, not a bad quarter.
 Random sessions run through both and every observable is compared after every
 command. This is the only technique on the list that finds bugs nobody thought
 to look for, and the [mutant scoreboard](../LESSONS.md) shows two of six seeded
-bugs were invisible to 106 hand-written tests and obvious to the differential.
+bugs were invisible to the 106 hand-written tests of the time and obvious to the
+differential. Its limit showed later: two engines written from one spec can
+agree on something wrong, so the rules the spec states outright, an uncrossed
+book and cascades run to completion, are also checked on each engine with no
+oracle at all.
 
-**2. Backend against onchain.** A reconciler that runs after randomized trading
-sessions and asserts three-way agreement between what the frontend renders, what
-the backend has stored, and what the contract holds. Run under fault injection,
-because the interesting divergence appears when something fails mid-settlement
-rather than in the happy path.
+**2. Backend against onchain.** The consistency suite runs the same random
+sessions through the offchain engine and ledger and through the contract on a
+local chain, and compares balances and books. A reconciler compares the two
+sides after a simulated reorg and must report the divergence rather than
+agreement. Not built yet: bringing what the frontend renders into the same
+comparison, and running it under fault injection, where the interesting
+divergence appears mid-settlement.
 
 **3. Fee and settlement arithmetic.** Property tests for conservation: value in
 equals value out plus fees, over any sequence, always. Integer arithmetic
 throughout, with rounding direction asserted rather than assumed. See
 [PRECISION.md](PRECISION.md).
 
-**4. Cancel against concurrent fill.** The canonical exchange race. Interleaved
-operations against invariants, not example-based tests, because the failing
-interleaving is never the one anybody writes down.
+**4. Cancel against concurrent fill.** The canonical exchange race. The engine
+is a single writer, so in-process the race becomes an ordering question: the
+property generator interleaves cancels with orders, including cancels of
+orders that have partly filled or already gone, and every invariant is checked
+after each one. What that cannot see is a race below the engine, in the HTTP
+layer or a queue in front of it. A concurrent harness against the running
+service is the missing piece; see [NON-GOALS.md](NON-GOALS.md).
 
-**5. Order lifecycle accounting.** Every order's quantity is accounted for at
-all times: filled plus remaining plus cancelled equals submitted. Checked as an
-invariant after every command in the property suite rather than asserted at the
-end of a scenario.
+**5. Order lifecycle accounting.** Every resting order's quantity is accounted
+for: what the trade tape says it filled, plus what is still resting, equals what
+it was accepted for. Checked on each engine after every command in the property
+suite rather than asserted at the end of a scenario.
 
 **6. Reduce-only and position limits.** A position that grows when an order said
 it would only shrink is a risk-limit breach dressed as a fill.
@@ -114,6 +130,12 @@ it would only shrink is a risk-limit breach dressed as a fill.
 This ranking is a claim about a system that has not run in production yet.
 Detection difficulty in particular is a guess. The first real incident is worth
 more than the whole table, and the table gets rewritten the day one lands.
+
+It has already been revised once. Stop cascades were scored 3 for detection, on
+the grounds that a wrong cascade shows up as a strange fill. Then both engines
+turned out to leave a crossed book after a cascade, and to run cascades out of
+order, and nothing noticed: every service up, both engines in agreement. That is
+a 5. The row moved from 24 to 40, top of the second tier.
 
 Explicitly revisit when: the first incident happens, perpetuals or margin ship
 (liquidation would enter at or near the top), a market maker integrates by API
