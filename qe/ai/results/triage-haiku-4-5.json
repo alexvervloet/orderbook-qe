@@ -1,0 +1,94 @@
+{
+  "generatedAt": "2026-09-23T02:01:31.920Z",
+  "model": "claude-haiku-4-5",
+  "corpusSize": 12,
+  "correct": 9,
+  "accuracy": 0.75,
+  "estimatedSpendUsd": 0.019824,
+  "verdicts": [
+    {
+      "id": "escrow-underflow",
+      "label": "product-bug",
+      "rootCause": "Escrow accounting arithmetic underflows at small quoteScale values due to precision loss in fixed-point math during order settlement.",
+      "confidence": 0.92,
+      "labelled": "product-bug"
+    },
+    {
+      "id": "notional-overflow-panic",
+      "label": "product-bug",
+      "rootCause": "Arithmetic overflow in notional calculation when processing limit orders with maximum uint128 values, causing panic instead of proper InsufficientBalance error.",
+      "confidence": 0.95,
+      "labelled": "product-bug"
+    },
+    {
+      "id": "generator-length-bias",
+      "label": "test-equipment",
+      "rootCause": "Test generator is not producing the intended volume of test data; only 300 of 360 configured sessions were generated, indicating a configuration or implementation issue in the array generation harness.",
+      "confidence": 0.92,
+      "labelled": "test-equipment"
+    },
+    {
+      "id": "invariant-handler-swallows-reverts",
+      "label": "test-equipment",
+      "rootCause": "Invariant handler silently catches and discards revert exceptions that should have failed the invariants, preventing detection of the limit-price violation.",
+      "confidence": 0.95,
+      "labelled": "test-equipment"
+    },
+    {
+      "id": "replay-shape-mismatch",
+      "label": "test-bug",
+      "rootCause": "Replay reconstruction logic fails to include the price field when rebuilding the order book state from historical events.",
+      "confidence": 0.85,
+      "labelled": "test-bug"
+    },
+    {
+      "id": "precision-assertion-inverted",
+      "label": "test-bug",
+      "rootCause": "Test assertion inverted: negation operator applied to equality check that should be positive, causing correct behavior to fail.",
+      "confidence": 0.95,
+      "labelled": "test-bug"
+    },
+    {
+      "id": "viem-polling-timeout",
+      "label": "environment",
+      "rootCause": "Test hook timeout threshold (60000ms) is marginally lower than typical setup execution time (60422ms), causing flaky failures under resource contention.",
+      "confidence": 0.85,
+      "labelled": "environment"
+    },
+    {
+      "id": "break-to-continue-fillability",
+      "label": "test-equipment",
+      "rootCause": "FOK fillability scan logic is not exercised by the test suite, allowing a break→continue mutation to survive without observable behavioral change in tested scenarios.",
+      "confidence": 0.95,
+      "labelled": "equivalent"
+    },
+    {
+      "id": "coverage-check-as-invariant",
+      "label": "test-equipment",
+      "rootCause": "The invariant harness does not exercise the order placement codepath, so the invariant cannot detect actual contract behavior and fails immediately as a coverage check rather than a real invariant.",
+      "confidence": 0.95,
+      "labelled": "test-bug"
+    },
+    {
+      "id": "ledger-conservation-blind-to-counterparty",
+      "label": "test-equipment",
+      "rootCause": "Ledger conservation test does not exercise counterparty isolation and accepts mutations that collapse buyer/seller identity.",
+      "confidence": 0.95,
+      "labelled": "test-bug"
+    },
+    {
+      "id": "flaky-port-collision",
+      "label": "environment",
+      "rootCause": "Port 8080 is not properly released between test runs when parallel worker count exceeds 4, causing intermittent EADDRINUSE errors on retry.",
+      "confidence": 0.92,
+      "labelled": "environment"
+    },
+    {
+      "id": "crossed-book-after-cancel",
+      "label": "product-bug",
+      "rootCause": "Order cancellation leaves zero-quantity price level entries in the book instead of removing the level entirely.",
+      "confidence": 0.95,
+      "labelled": "product-bug"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "generatedAt": "2026-09-23T02:03:28.096Z",
+  "model": "claude-sonnet-5",
+  "corpusSize": 12,
+  "correct": 8,
+  "accuracy": 0.6666666666666666,
+  "estimatedSpendUsd": 0.047444,
+  "verdicts": [
+    {
+      "id": "escrow-underflow",
+      "label": "product-bug",
+      "rootCause": "At low quoteScale (3), intermediate escrow/balance calculations underflow or lose precision during scaling/rounding, causing the onchain contract to revert with an arithmetic panic on an order that the offchain matching engine incorrectly accepts.",
+      "confidence": 0.75,
+      "labelled": "product-bug"
+    },
+    {
+      "id": "notional-overflow-panic",
+      "label": "test-bug",
+      "rootCause": "The test passes unrealistic extreme inputs (type(uint128).max for both price and amount) causing the notional = price*amount multiplication to overflow before the balance check can execute, so the test's expected-revert assertion (InsufficientBalance) doesn't match the actual arithmetic overflow panic; the test should use bounded/realistic values or expect the overflow panic.",
+      "confidence": 0.6,
+      "labelled": "product-bug"
+    },
+    {
+      "id": "generator-length-bias",
+      "label": "test-equipment",
+      "rootCause": "The command-array generator is heavily length-biased toward short arrays (average ~6 commands instead of up to 40), so property runs finish in 30ms and never exercise long/complex session sequences, masking real bugs behind a passing suite.",
+      "confidence": 0.75,
+      "labelled": "test-equipment"
+    },
+    {
+      "id": "invariant-handler-swallows-reverts",
+      "label": "test-equipment",
+      "rootCause": "The invariant handler catches/swallows reverts (or fails to bound/validate call arguments) so that price-crossing trades never actually get exercised or asserted upon, letting the mutant pass silently with zero reverts logged.",
+      "confidence": 0.82,
+      "labelled": "test-equipment"
+    },
+    {
+      "id": "replay-shape-mismatch",
+      "label": "test-bug",
+      "rootCause": "The replay/reconnect test builds its expected snapshot map without including the 'price' field (or strips it inconsistently), so the assertion compares mismatched shapes even though backend and fetched book agree, indicating a fixture/expectation construction bug rather than a product defect.",
+      "confidence": 0.65,
+      "labelled": "test-bug"
+    },
+    {
+      "id": "precision-assertion-inverted",
+      "label": "test-bug",
+      "rootCause": "Test compares numeric fields using a JS Number that loses precision above 2^53, so the \"not to be\" assertion is inverted/broken by float precision loss rather than an actual product defect—the prior string equality check already confirmed the correct value.",
+      "confidence": 0.75,
+      "labelled": "test-bug"
+    },
+    {
+      "id": "viem-polling-timeout",
+      "label": "environment",
+      "rootCause": "The beforeAll deployment sequence (15 sequential txs) naturally takes just over the 60s hook timeout under normal load/contention, as shown by the standalone run finishing at 60422ms; this is a timing/resource margin issue, not a defect in product or test logic.",
+      "confidence": 0.62,
+      "labelled": "environment"
+    },
+    {
+      "id": "break-to-continue-fillability",
+      "label": "test-equipment",
+      "rootCause": "The FOK fillability scan's early-exit termination logic (break vs continue) is never exercised by a test case where a later book level would flip the fillability decision, so the mutation is undetectable by the current test/differential suites despite being an observable behavioral change (e.g. incorrect fill decisions when scanning deeper levels), indicating missing test coverage/generator scenarios rather than an equivalent mutant.",
+      "confidence": 0.65,
+      "labelled": "equivalent"
+    },
+    {
+      "id": "coverage-check-as-invariant",
+      "label": "test-bug",
+      "rootCause": "The invariant test asserts a coverage/liveness condition (that at least one order was placed) rather than a true product invariant, and since the handler/setup never actually places an order, the assertion fails deterministically on the correct, unmodified contract—indicating the test's expectation/assertion logic is wrong, not the product.",
+      "confidence": 0.65,
+      "labelled": "test-bug"
+    },
+    {
+      "id": "ledger-conservation-blind-to-counterparty",
+      "label": "test-equipment",
+      "rootCause": "The conservation property only checks total ledger sum invariants (deposits=withdrawals across all accounts) without asserting per-trade buyer/seller identity distinctness, so collapsing buyer==seller still conserves total balance and the mutant survives undetected.",
+      "confidence": 0.75,
+      "labelled": "test-bug"
+    },
+    {
+      "id": "flaky-port-collision",
+      "label": "test-equipment",
+      "rootCause": "Test harness hardcodes a fixed port (8080) instead of allocating an ephemeral/unique port per parallel worker, causing collisions when concurrency exceeds 4 workers.",
+      "confidence": 0.75,
+      "labelled": "environment"
+    },
+    {
+      "id": "crossed-book-after-cancel",
+      "label": "product-bug",
+      "rootCause": "Cancelling the last order at a price level fails to remove the now-empty price level entry from the order book, leaving a stale zero-quantity level (\"101x0/0\") in production state that the reference model correctly prunes.",
+      "confidence": 0.8,
+      "labelled": "product-bug"
+    }
+  ]
+}
