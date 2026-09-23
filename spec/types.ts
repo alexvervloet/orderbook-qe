@@ -111,6 +111,7 @@ export type RejectReason =
   | 'market_order_cannot_rest'
   | 'duplicate_order_id'
   | 'unknown_order'
+  | 'insufficient_funds'
 
 /** What happened to a submitted order, as a whole. */
 export type OrderOutcome =
