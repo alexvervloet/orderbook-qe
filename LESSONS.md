@@ -213,3 +213,53 @@ under test. The suspicious signal was that 60.4 seconds is not a plausible
 duration for real work; it is a round number, and round numbers in timings mean
 a timeout or a poll interval. Dividing the elapsed time by the number of
 operations gave 4 seconds each, which named the cause immediately.
+
+## The mutation runner hung for fifty minutes with a mutant in the working tree
+
+**Expected.** 281 mutants at roughly 1.5 seconds each: about seven minutes,
+fifteen at worst.
+
+**What happened.** Fifty minutes, zero output, two Vitest workers pinned at 100%
+of a core. `git status` showed `matching-engine.ts` and `ledger.ts` as modified,
+which for this tool means a mutant was sitting in the source I was still editing
+around.
+
+The mutant was in the stop-trigger cascade:
+
+```ts
+for (;;) {
+  const ready = stops.filter(...)
+  if (ready.length === 0) break   // mutated to !== 0
+  ...
+}
+```
+
+With `!== 0`, an empty `ready` no longer breaks, the loop body does nothing, and
+it spins forever. `execFileSync` has no default timeout, so the runner waited on
+it indefinitely. Its `finally` block would have restored the source, but a
+`finally` never runs while the `try` is still blocked.
+
+**Three fixes, because there were three faults.**
+
+1. A per-mutant timeout, `SIGKILL` at 60 seconds. A mutant that hangs counts as
+   killed: the suite would never have gone green. It just must not take the
+   harness with it.
+2. A lock file. A second mutation run had started concurrently for the AI
+   generation scoring, and two processes rewriting the same files in place
+   corrupt each other's restore. Now the second one refuses to start and says
+   why.
+3. Signal handlers for `SIGINT` and `SIGTERM` that release the lock and warn to
+   check `git status`. Interrupting a run must not leave a mutant behind.
+
+Verified by reapplying the exact mutant: killed at 20 seconds under a 20-second
+cap, source clean afterwards.
+
+**Next time.** Any tool that modifies source in place and shells out needs the
+timeout, the lock and the signal handler before its first real run, not after.
+The dangerous property is not slowness, it is that the restore path runs only on
+the happy path. I wrote the `finally` and thought the problem was handled; a
+`finally` is not a guarantee when the body can block forever.
+
+And the signal that something was wrong was arithmetic, not intuition: fifty
+minutes against a seven-minute estimate is not "slower than expected", it is a
+different failure. Estimating first is what made the hang visible.
