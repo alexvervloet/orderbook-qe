@@ -91,6 +91,28 @@ export function brokenInvariant(engine: MatchingEngine): string | null {
 }
 
 /**
+ * Every resting order's quantity is accounted for: what has filled, plus what
+ * is still resting, is what the order was accepted for. Checked from the trade
+ * tape, so an engine that loses or invents quantity in a partial fill, an
+ * iceberg refresh or a cascade cannot hide it in its own bookkeeping.
+ */
+function unaccountedQuantity(
+  engine: MatchingEngine,
+  filled: ReadonlyMap<string, bigint>,
+): string | null {
+  for (const order of engine.restingOrders()) {
+    const traded = filled.get(order.request.id) ?? 0n
+    if (traded + order.remaining !== order.request.quantity) {
+      return (
+        `order ${order.request.id} is not accounted for: ${traded} filled + ` +
+        `${order.remaining} resting != ${order.request.quantity} accepted`
+      )
+    }
+  }
+  return null
+}
+
+/**
  * Drive one engine through the session, checking the invariants after every
  * command. No oracle, so it catches bugs both engines share.
  */
@@ -100,14 +122,21 @@ export function replayInvariants(
 ): SessionFailure | null {
   const engine = create()
   const submitted: string[] = []
+  const filled = new Map<string, bigint>()
+  const fill = (id: string, quantity: bigint): void => {
+    filled.set(id, (filled.get(id) ?? 0n) + quantity)
+  }
   for (const [index, command] of commands.entries()) {
     if (command.kind === 'submit') {
       submitted.push(command.request.id)
-      engine.submit(command.request)
+      for (const trade of engine.submit(command.request).trades) {
+        fill(trade.takerOrderId, trade.quantity)
+        fill(trade.makerOrderId, trade.quantity)
+      }
     } else {
       engine.cancel(targetOf(command, submitted))
     }
-    const broken = brokenInvariant(engine)
+    const broken = brokenInvariant(engine) ?? unaccountedQuantity(engine, filled)
     if (broken !== null) {
       return report(`Invariant broken at command ${index}: ${broken}`, commands, index)
     }
