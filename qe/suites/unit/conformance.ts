@@ -142,6 +142,20 @@ export function describeMatchingEngine(name: string, create: Factory): void {
         ])
       })
 
+      it('does not count liquidity priced beyond the limit toward FOK fillability', () => {
+        // One lot is reachable at 101. Five more sit at 110, past the limit.
+        // A FOK for three lots must be rejected on the one reachable lot alone.
+        // Added after a mutant that deleted the price guard in the fillability
+        // scan survived all 104 unit tests. See LESSONS.md.
+        engine.submit(sell(101n, 1n, { accountId: 'm1' }))
+        engine.submit(sell(110n, 5n, { accountId: 'm2' }))
+
+        const result = engine.submit(buy(101n, 3n, { accountId: 'taker', tif: 'FOK' }))
+
+        expect(rejection(result)).toBe('fok_not_fully_fillable')
+        expect(result.trades).toEqual([])
+      })
+
       it('does not count hidden iceberg size toward FOK fillability', () => {
         // Ten lots are resting but only two are displayed.
         engine.submit(sell(101n, 10n, { accountId: 'maker', displayQuantity: 2n }))
