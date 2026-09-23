@@ -91,7 +91,8 @@ was wrong in three ways, each of which made it higher:
 - The comparison operators mutated generic type brackets. `Map<OrderId, Node>`
   became a syntax error that every suite "killed". There were 26 of these.
 - The contract scored 54 of 54. With a flaky per-run invariant check removed and
-  nothing persisted between runs, it scored 43 of 57. The likeliest cause is
+  nothing persisted between runs, it scored 43 of 57, the three extra mutants
+  coming from lines added by fixes in between. The likeliest cause is
   Foundry replaying one persisted failure against every later mutant, which the
   runner never cleared. Nine of the survivors were real gaps in the Solidity
   tests, and writing the test for one of them found a real bug. See
