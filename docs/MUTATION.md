@@ -46,31 +46,29 @@ The report is a diagnostic. It goes to a human, who decides.
 ## The current result, and what it does not mean
 
 ```
-engine       81/81    100%   (10 known equivalent, 1 killed by timeout)
-book-side    24/24    100%   ( 0 known equivalent, 1 killed by timeout)
-ledger       13/13    100%   ( 1 known equivalent, 0 killed by timeout)
-reference    86/86    100%   (11 known equivalent, 2 killed by timeout)
-contract     54/54    100%   ( 0 known equivalent, 0 killed by timeout)
+engine       73/73    100%   ( 6 known equivalent, 1 killed by timeout)
+book-side    22/22    100%   ( 0 known equivalent, 1 killed by timeout)
+ledger        9/9     100%   ( 1 known equivalent, 0 killed by timeout)
+reference    81/81    100%   ( 7 known equivalent, 2 killed by timeout)
+contract     52/53     98%   ( 5 known equivalent, 1 killed by timeout)
 
-overall     258/258   100%   (22 equivalent mutants excluded)
+overall     237/238    99.6% (19 equivalent mutants excluded)
 ```
 
-A 100% score should raise an eyebrow, so here is precisely what it is.
+**It is a score after triage.** The 19 exclusions are human judgements recorded
+in `qe/mutation/equivalents.ts`, one argument per mutant. If an argument is
+wrong, the real score is lower. A unit test fails if an entry names an operator
+the runner does not have, or a mutant it no longer generates.
 
-**It is 258 of 258 after excluding 22 equivalent mutants.** That exclusion is a
-human judgement recorded in `qe/mutation/equivalents.ts`, one argument per
-entry. If an argument is wrong, the real score is lower. The arguments are
-written down so they can be checked rather than trusted.
+**The one survivor is left standing on purpose.** It is on the contract's guard
+against notional plus fee escrow overflowing. Killing it needs an order whose
+escrow is exactly 2^256 - 1, which no balance can fund, and the only difference
+it makes is which refusal the caller sees. It is not equivalent, so it is not
+excused. It is reported.
 
-**It is a score after triage, not before.** The first full run was 260 of 280.
-Of the 20 survivors, 13 turned out to be equivalent, 4 were genuine gaps that
-are now covered, 1 was dead code that has been deleted, and the remaining 2 are
-in the registry. The 93% and the 100% are the same suite; the difference is a
-few hours of reading.
-
-**Four mutants were killed by timeout**, meaning they turned a loop into an
-infinite one. Counted as killed, because a suite that never finishes never goes
-green, and flagged separately so they are not mistaken for ordinary kills.
+**Mutants killed by timeout** turned a loop into an infinite one. They count as
+killed, because a suite that never finishes never goes green, and are flagged
+separately so they are not mistaken for ordinary kills.
 
 **It covers these operators only.** Comparison flips, boundary shifts, logical
 connectives and compound assignment. It does not delete statements, reorder
@@ -82,13 +80,38 @@ encoding, the exchange service and the frontend are not targets. Their coverage
 comes from the contract and end-to-end suites and is not expressed as a kill
 rate.
 
-The most useful thing in the table is not the percentage. It is that the
-contract scored 54 of 54 with zero equivalents, and that the worst bug in this
-repository was in the contract and was not found by mutation testing at all. It
-was found by differential testing against a market whose fee arithmetic does not
-divide evenly. A mutation operator that flips a comparison cannot produce
-`ceil(a) + ceil(b) != ceil(a + b)`, because that bug is not a mutated line: it
-is two correct lines that disagree.
+## The number this replaced
+
+This page used to report 258 of 258 with 22 equivalents excluded. That number
+was wrong in three ways, each of which made it higher:
+
+- The registry excused a mutant by its line, not its operator. Listing the
+  `>` on the reduce-only lines excused the `===` and `&&` mutants on the same
+  lines too. All eight of those are killable, and are now killed.
+- The comparison operators mutated generic type brackets. `Map<OrderId, Node>`
+  became a syntax error that every suite "killed". There were 26 of these.
+- The contract scored 54 of 54. With a flaky per-run invariant check removed and
+  nothing persisted between runs, it scored 43 of 57. The likeliest cause is
+  Foundry replaying one persisted failure against every later mutant, which the
+  runner never cleared. Nine of the survivors were real gaps in the Solidity
+  tests, and writing the test for one of them found a real bug. See
+  [FAILURE-MODES.md](FAILURE-MODES.md).
+
+The full account is in [../LESSONS.md](../LESSONS.md).
+
+## What mutation testing did not find
+
+The most useful thing about this table is not the percentage. The worst bugs in
+this repository were not found by mutation testing at all:
+
+- The escrow bug, and later the escrow dust left by its fix, were two correct
+  lines that disagreed with each other. A mutation operator that flips a
+  comparison cannot produce `ceil(a) + ceil(b) != ceil(a + b)`. Differential
+  testing on a market whose fees do not divide evenly found the first, and an
+  audit found the second.
+- The crossed book was the same wrong design in both engines. Every mutant of
+  either engine was killed, and the engines still agreed on a book that was
+  wrong. A property that checked the book with no oracle found it.
 
 Mutation testing measures whether the tests check the code that exists. It
 cannot tell you the design is wrong.
@@ -99,14 +122,16 @@ A mutant that changes the source without changing behaviour. No test can detect
 it, because there is nothing to detect.
 
 `qe/mutation/equivalents.ts` is a registry of the ones found so far, each with
-the argument for why it is equivalent. Triage is human work and there is no way
-around that; what the registry does is make it work done once, so the next
-person reads an argument instead of rebuilding it.
+the argument for why it is equivalent, keyed by file, line and operator. Triage
+is human work and there is no way around that. What the registry does is make
+it work done once, so the next person reads an argument instead of rebuilding
+it.
 
 Every entry is a claim that can be wrong. If behaviour later changes so a listed
 mutant becomes observable, the entry is a bug.
 
-The worked example, which cost an hour and a wrong conclusion:
+The worked example, which cost an hour and a wrong conclusion, came from a
+mutant applied by hand, not by the runner, which has no statement operators:
 
 ```ts
 for (const price of book.prices()) {
@@ -143,7 +168,8 @@ The most useful survivor this repository produced was in the ledger:
 account, and it survived every conservation property. Conservation is satisfied
 by moving nothing. The suite asserted that totals were unchanged and never that
 the two counterparties moved in opposite directions. Adding that assertion took
-the ledger from 6 of 12 to 11 of 11.
+the ledger from 6 of 12 to 11 of 11, counted at the time with the generic-bracket
+mutants still included.
 
 ## Two operational warnings
 
@@ -154,8 +180,8 @@ ran for fifty minutes with a modified source file in the working tree.
 
 **Two runs must not overlap.** The runner rewrites files in place, so a
 concurrent run corrupts the other's restore. A lock file makes that a clear
-error. Interrupting a run releases the lock and prints a warning to check
-`git status`, because a mutant left in the tree is a defect that was never
-committed and is very confusing to debug.
+error. Ctrl-C or SIGTERM stops the run between mutants, restores the source,
+rebuilds the contract if it was the target, and writes no report, because a
+partial score reads like a whole one.
 
 Both are in [../LESSONS.md](../LESSONS.md), and both were found the hard way.
