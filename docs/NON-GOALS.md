@@ -130,6 +130,75 @@ lock, a network buffer, will not be found this way.
 not have represented. Then the model gains that mechanism, rather than the suite
 gaining a sleep.
 
+### Maker-side funding is not reserved offchain
+
+**Decision.** The offchain exchange checks that an *incoming* order can be paid
+for before it matches. It does not reserve a resting order's funds, so a maker
+whose balance falls after their order rests can still fail to settle.
+
+**Why this is not symmetric with the contract.** The Solidity contract escrows
+at placement: funds are locked when an order rests and released as it fills.
+The offchain ledger does not, by design, because reservation belongs with a risk
+layer that does not exist yet. That is a real asymmetry between the two
+implementations and it is written down here rather than left to be discovered.
+
+**Cost.** A maker can rest a sell for their whole base balance and then sell the
+same base as a taker. Both orders are individually affordable; together they are
+not. The second settlement would throw. The exchange raises
+`SettlementInconsistencyError` and stops rather than carrying an engine and a
+ledger that disagree, which is the right failure but is still a failure.
+
+**Why not fix it now.** Doing it properly means a reservation model across
+order placement, cancellation, partial fills and expiry, which is a feature
+rather than a test. Doing it improperly, by checking balances again at
+settlement and unwinding, means the engine needs a rollback it does not have.
+
+**Reverses if.** Reservation ships, at which point the offchain ledger should
+mirror the contract's escrow and the consistency suite should compare locked
+balances as well as totals. Until then the gap is known, named and loud.
+
+### Reorgs are detected, not recovered from
+
+**Decision.** The chaos suite asserts that a reconciler *notices* the divergence
+a chain reorganisation produces. It does not assert recovery, because recovery
+is not implemented.
+
+**Why.** Writing a test for behaviour that does not exist, and having it pass
+because the assertions were chosen to match the absence, is worse than having no
+test: it puts a green tick next to a gap. Detection is the prerequisite for
+recovery and is the part that must never silently fail, so that is what is
+covered.
+
+**Cost.** After a reorg this platform knows it is wrong and cannot yet put
+itself right.
+
+**Reverses if.** Reorg handling ships. The detection tests then become the
+setup for the recovery tests.
+
+### One browser, not a matrix
+
+**Decision.** End-to-end tests run on Chromium only.
+
+**Why.** The risk this layer covers is the frontend disagreeing with the backend
+about state, which is not a per-engine behaviour. Three browsers would triple
+the cost and the flake surface for no additional signal.
+
+**Reverses if.** A rendering or API-compatibility bug reaches production that
+only one engine exhibits.
+
+### Socket-level reconnect is not tested in the browser
+
+**Decision.** The end-to-end suite tests recovery via a page reload. Cutting a
+live WebSocket from a browser test is not done here.
+
+**Why.** It is unreliable to do from Playwright, and the logic it would exercise,
+gap detection and re-snapshotting, is already covered precisely in the contract
+suite where sequence numbers can be driven directly. Testing it twice, once
+badly, adds a flaky test rather than coverage.
+
+**Reverses if.** The reconnect path diverges between what the contract suite can
+drive and what a real socket drop produces.
+
 ## Tested, but not the way it looks
 
 ### The mutation score is not a coverage target
