@@ -14,7 +14,6 @@ import websocket from '@fastify/websocket'
 import { z } from 'zod'
 import { Exchange } from './exchange.ts'
 import type { Market } from './ledger.ts'
-import { OverdraftError } from './ledger.ts'
 import {
   encodeBigInts,
   JsonRpcRequest,
@@ -115,17 +114,13 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
         message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       })
     }
-    try {
-      const order = toOrderRequest(exchange, parsed.data)
-      const result = exchange.submit(order)
-      const code = result.outcome.kind === 'rejected' ? 422 : 201
-      return reply.code(code).send(encodeSubmit(result, order.quantity))
-    } catch (error) {
-      if (error instanceof OverdraftError) {
-        return reply.code(402).send({ error: 'insufficient_funds', message: error.message })
-      }
-      throw error
-    }
+    // An unaffordable order is a 422 like any other refusal. A settlement
+    // failure after matching is SettlementInconsistencyError, and a 500 is the
+    // honest answer to that: the exchange is in a state it should never reach.
+    const order = toOrderRequest(exchange, parsed.data)
+    const result = exchange.submit(order)
+    const code = result.outcome.kind === 'rejected' ? 422 : 201
+    return reply.code(code).send(encodeSubmit(result, order.quantity))
   })
 
   app.delete<{ Params: { id: string } }>('/orders/:id', async (request, reply) => {
