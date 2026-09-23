@@ -83,3 +83,63 @@ for, because nobody writes a test asserting that `orderCount` is still right.
 
 The missing FOK case has since been added to the conformance suite, so the
 second row is now caught by both. The first is still differential-only.
+
+## An invariant suite that passed by swallowing the failure
+
+**Expected.** Breaking the limit-price check in the contract's matching loop
+would let a buy at 90 trade against an ask at 110, and the solvency or
+crossed-book invariants would catch it immediately.
+
+**What happened.** Every invariant passed. Foundry reported `reverts: 0` and 398
+successful `placeOrder` calls.
+
+The mutant does break the contract, badly. A taker escrows quote at its own
+limit price, so executing above that limit underflows the escrow release and the
+whole transaction reverts. Every affected call reverted, the handler's
+`catch {}` absorbed each one as though it were an ordinary refusal, and the
+invariants were then evaluated against a book on which nothing had happened.
+They held, because nothing holds more reliably than a system that has stopped
+working.
+
+The `reverts: 0` line is the part worth remembering. It counts reverts that
+escape the handler. A handler that catches everything reports zero reverts
+whatever the contract does.
+
+**Fix.** Two changes. The handler now distinguishes `catch Panic(uint256)` from
+a named revert and counts panics in a ghost variable, and
+`invariant_NoArithmeticPanics` asserts that count is zero. An arithmetic
+underflow is never the contract refusing on purpose. Separately,
+`afterInvariant` asserts the run placed at least one order, so a run that
+exercised nothing fails loudly instead of passing quietly.
+
+With both in place the mutant dies on the first run.
+
+**Next time.** `try/catch` in an invariant handler is a decision about what
+counts as acceptable behaviour, not error handling. Write down which reverts are
+expected and assert that nothing else happened. And whenever an invariant suite
+is green, check the call summary before believing it: the numbers that matter
+are how many calls did real work, not how many ran.
+
+**Second lesson, from fixing the first.** My first attempt asserted "the run
+placed at least one order" as an invariant, and it failed immediately on the
+correct contract. Foundry evaluates invariants after every call including the
+first, when no order has been placed yet. Coverage of a run is a property of a
+finished run, not of every state it passes through, so it belongs in
+`afterInvariant`. An invariant that is false at the start of every run is not an
+invariant.
+
+## Solidity's overflow protection is not an error message
+
+`placeLimitOrder(type(uint128).max, type(uint128).max)` reverted with an
+arithmetic panic rather than the intended `InsufficientBalance`. `uint128 *
+uint128` fits in a `uint256`, but multiplying by `quoteScale` does not, and the
+overflow happened before the balance check.
+
+Nothing was at risk; the transaction reverted, which is what should happen. But
+a panic is indistinguishable from a contract bug at the call site, and an
+integrator cannot tell "your order is too large to price" from "this exchange is
+broken". The fix is an explicit guard and a named `NotionalOverflow` error.
+
+**Next time.** Reverting for the right reason and reverting for a reason the
+caller can act on are different requirements. Checked arithmetic satisfies the
+first and not the second.
