@@ -143,3 +143,73 @@ broken". The fix is an explicit guard and a named `NotionalOverflow` error.
 **Next time.** Reverting for the right reason and reverting for a reason the
 caller can act on are different requirements. Checked arithmetic satisfies the
 first and not the second.
+
+## Round numbers in the default market hid a whole class of bug
+
+**Expected.** The Solidity suite was in good shape: 23 unit tests, three fuzz
+tests, eight invariants over 2,048 calls, all green. The offchain/onchain
+consistency suite would confirm the two implementations agreed.
+
+**What happened.** They agreed on every market I had configured, and disagreed
+within five runs on one I had not.
+
+The default market uses `quoteScale` 10,000 against a 10,000 basis-point
+denominator. Every fee therefore divides evenly, the ceiling never rounds
+anything, and a buggy escrow formula and a correct one return identical numbers
+for every input any of those tests could produce. The bug was unreachable, not
+absent.
+
+Setting `quoteScale` to 3 made the remainder real. fast-check shrank to four
+orders and found an escrow underflow that permanently strands a trader's funds.
+Details in [docs/FAILURE-MODES.md](docs/FAILURE-MODES.md).
+
+**Next time.** Configuration is test input. Picking convenient round numbers for
+a fixture is a decision to never exercise the arithmetic those numbers make
+trivial, and it is invisible: the tests look thorough and the coverage looks
+complete. Any system with fees, scaling or unit conversion needs at least one
+fixture where nothing divides evenly, and it should be the one the property
+tests run against.
+
+## The consistency suite could not see a price
+
+**Expected.** Comparing the offchain engine against the contract after identical
+order sequences would catch any disagreement about matching.
+
+**What happened.** A mutant that made the offchain engine execute at the taker's
+limit price instead of the maker's resting price passed the entire consistency
+suite.
+
+The suite compared visible depth and base balances. Neither can see an execution
+price. A fill of five lots moves five lots of base whether it printed at 101 or
+at 105, and the depth left behind is identical either way. Price only appears in
+the quote leg, which was not compared.
+
+**Fix.** Compare quote holdings and collected fees as well as base. The mutant
+then dies immediately, along with one that charged the maker rate to the taker.
+
+**Next time.** Before trusting a comparison, ask which fields of the system it
+can physically observe, and check that list against what can go wrong. "It
+compares state after every command" sounds exhaustive and was missing half the
+ledger. The discipline that caught it was mutation probing: I would not have
+noticed by reading the assertions, because the assertions look comprehensive.
+
+## viem's default polling made the chain tests look slow
+
+**Expected.** Deploying three contracts and funding three traders against a
+local Anvil node would take a moment.
+
+**What happened.** It took 60.4 seconds, and the suite timed out.
+
+Anvil mines instantly. viem polls for receipts every 4,000 milliseconds by
+default, a sensible figure for a public network and pure dead time here. Fifteen
+setup transactions at one tick each is sixty seconds of a test waiting for
+nothing.
+
+Setting `pollingInterval` to 20ms took the same work to 601 milliseconds, a
+hundredfold difference from one line of configuration.
+
+**Next time.** When a test harness is slow, measure before optimising the code
+under test. The suspicious signal was that 60.4 seconds is not a plausible
+duration for real work; it is a round number, and round numbers in timings mean
+a timeout or a poll interval. Dividing the elapsed time by the number of
+operations gave 4 seconds each, which named the cause immediately.
