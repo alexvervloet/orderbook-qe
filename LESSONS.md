@@ -380,3 +380,38 @@ Any process this harness spawns needs an owner that survives the harness dying,
 and "I will remember to call stop()" is not one. The check is not "does cleanup
 run when the test passes", it is "does cleanup run when the process is killed
 mid-test", and the way to find out is to kill it and look.
+
+## The mutation runner restored the source and left the bytecode
+
+**Expected.** Restoring the mutated file in a `finally` block returns the
+repository to a clean state.
+
+**What happened.** For TypeScript it does. For Solidity it does not, and I did
+not notice the difference.
+
+`forge test` compiles before it runs, so each Solidity mutant leaves its
+bytecode in `out/`. The runner restored `OrderBookExchange.sol` and stopped
+there, so the last mutant's bytecode stayed on disk. Everything that deploys
+from `out/`, which is every offchain/onchain and chaos test, was then deploying
+a deliberately broken contract.
+
+**The symptom pointed somewhere else entirely.** Thirteen tests failed with the
+contract reporting empty books and unmoved balances. `git status` was clean. I
+spent an hour on the fixture: I added assertions that every funding transaction
+succeeded, added a balance read-back to prove the fixture worked, chased a
+suspected port race under parallel workers, and blamed machine load. All of that
+was reasonable and none of it was the problem. `forge build --force` fixed it in
+four seconds.
+
+**Fix.** The runner recompiles after restoring a Solidity target, and warns
+loudly if it cannot.
+
+**Next time.** "Restore the file" is only equivalent to "restore the state" for
+a language with no build step. Anything that mutates a compiled source has to
+restore the artifact too, and a clean `git status` actively argues against
+looking there, which makes it worse than no signal at all.
+
+The fixture assertions I added while chasing this are worth keeping regardless:
+the fixture used to swallow failed setup transactions, and would have reported
+"the contract disagrees with the engine" for an unfunded account. That was a
+real fault, just not this one.
