@@ -29,6 +29,7 @@ contract OrderBookExchange {
     error NotOrderOwner();
     error OrderNotFound();
     error TransferFailed();
+    error NotionalOverflow();
 
     // ------------------------------------------------------------- events
 
@@ -158,16 +159,16 @@ contract OrderBookExchange {
         // Escrow up front at the order's own limit, plus the worse of the two
         // fee rates. A fill at a better price or as a maker refunds the excess.
         uint256 worstFeeBps = takerFeeBps > makerFeeBps ? takerFeeBps : makerFeeBps;
+        uint256 notionalAtLimit = _notional(quantity, price);
         if (isBuy) {
-            uint256 notional = uint256(quantity) * price * quoteScale;
+            uint256 notional = notionalAtLimit;
             uint256 lock = notional + _ceilDiv(notional * worstFeeBps, BPS);
             if (availableQuote[msg.sender] < lock) revert InsufficientBalance();
             availableQuote[msg.sender] -= lock;
             lockedQuote[msg.sender] += lock;
         } else {
             uint256 lockBase = uint256(quantity) * baseScale;
-            uint256 notional = uint256(quantity) * price * quoteScale;
-            uint256 feeLock = _ceilDiv(notional * worstFeeBps, BPS);
+            uint256 feeLock = _ceilDiv(notionalAtLimit * worstFeeBps, BPS);
             if (availableBase[msg.sender] < lockBase) revert InsufficientBalance();
             if (availableQuote[msg.sender] < feeLock) revert InsufficientBalance();
             availableBase[msg.sender] -= lockBase;
@@ -389,6 +390,20 @@ contract OrderBookExchange {
 
     function _isBetter(bool isBuy, uint128 a, uint128 b) private pure returns (bool) {
         return isBuy ? a > b : a < b;
+    }
+
+    /**
+     * @dev Notional with an explicit overflow guard.
+     *
+     * uint128 x uint128 fits in a uint256, but multiplying by quoteScale need
+     * not. Without this the call reverts on an arithmetic panic, which tells
+     * the caller nothing and looks identical to a contract bug. An order too
+     * large to price is refused by name.
+     */
+    function _notional(uint128 quantity, uint128 price) private view returns (uint256) {
+        uint256 product = uint256(quantity) * uint256(price);
+        if (product != 0 && product > type(uint256).max / quoteScale) revert NotionalOverflow();
+        return product * quoteScale;
     }
 
     function _ceilDiv(uint256 numerator, uint256 denominator) private pure returns (uint256) {
