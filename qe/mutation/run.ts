@@ -173,11 +173,13 @@ type SuiteResult = 'killed' | 'survived' | 'timeout' | 'interrupted'
 /**
  * Forget any invariant failure Foundry persisted from the previous run.
  *
- * Foundry replays a persisted failing sequence before doing anything else. The
- * runner never cleared it, so one failure, from a mutant or from a flaky check,
- * replayed against every later mutant and the unmutated source alike. Every
- * contract mutant after it "failed", and every one was scored as killed. The
- * contract reported 57 of 57; with the cache cleared it scores 43 of 57.
+ * Foundry replays a persisted failing sequence before doing anything else, and
+ * the runner never cleared it. One failure, from a mutant or from the flaky
+ * per-run check the invariant suite used to have, then replays against every
+ * later mutant, which all "fail" and are all scored as killed. The contract
+ * once reported 57 of 57; with the flaky check gone and nothing persisted it
+ * scores 43 of 57. A replayed failure is the likeliest reason for the gap,
+ * though the old run cannot be reproduced to prove it.
  */
 function clearPersistedFailures(target: Target): void {
   if (!target.file.endsWith('.sol')) return
