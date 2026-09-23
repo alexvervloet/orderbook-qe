@@ -29,23 +29,25 @@ parsing a request body by hand.
 **Decision.** No component tests, no snapshot tests, no visual regression.
 
 **Why.** The frontend risk that matters is showing a number that disagrees with
-the backend, and that is covered by the consistency suite, which asserts
+the backend, and that is covered by the end-to-end cases that compare the
+rendered book with the backend's after a session and after a reload. They assert
 agreement rather than appearance. Whether a button is the right shade is a
 review comment. Snapshot tests on a UI that is still moving generate diffs
 nobody reads, and a suite people stop reading is worse than no suite, because it
 still costs the run.
 
 **Reverses if.** The UI stabilises and a rendering bug reaches production that
-the consistency suite could not have caught.
+the end-to-end suite could not have caught.
 
 ### Third-party library behaviour
 
-**Decision.** No tests asserting that the database driver returns rows or that
-the JSON-RPC client makes requests.
+**Decision.** No tests asserting that Fastify routes requests, that the
+WebSocket library delivers frames, or that viem sends transactions.
 
 **Why.** They have their own suites. What gets tested is this code's use of
-them, particularly at the boundaries where assumptions live: what the driver
-does with a `bigint`, and whether a failed transaction actually rolled back.
+them, particularly at the boundaries where assumptions live: what the JSON layer
+does with an integer above 2^53, and whether a reverted transaction is reported
+as reverted rather than as success.
 
 **Reverses if.** A dependency is pinned to a fork, or an upgrade breaks
 something a test here could have caught. Then the assumption gets a test, not
@@ -53,8 +55,9 @@ the library.
 
 ### Gas optimisation
 
-**Decision.** Gas is measured and tracked for regressions. No test asserts that
-a function is cheap.
+**Decision.** Gas is measured: every pull request uploads a gas report. No test
+asserts that a function is cheap, and nothing yet compares one report with the
+last; see [CI-POLICY.md](CI-POLICY.md).
 
 **Why.** A gas budget asserted before the contract's shape has settled is a test
 that fails on every honest refactor. A gas report that moves and gets looked at
@@ -70,8 +73,10 @@ safety multiple, not the largest number the hardware will produce.
 
 **Why.** Testing to a number nobody has committed to produces a figure for a
 slide. Testing to the committed number plus headroom produces an answer to
-whether it will hold. The multiple is written down in
-[CI-POLICY.md](CI-POLICY.md) so it can be argued with.
+whether it will hold. Both are arguments at the top of
+`qe/suites/perf/load.js`, 200 orders a second held at twice that, so they can be
+argued with. The 200 is an assumption standing in for a real commitment, and is
+the first thing to replace when one exists.
 
 **Reverses if.** A launch commitment changes the number.
 
@@ -98,37 +103,47 @@ someone to discover in production.
 **Reverses if.** A client relies on the strict reading. Then it is a product
 decision about which guarantee to sell, not a testing decision.
 
-### Reorgs are tested to a bounded depth
+### Reorgs are tested one block deep
 
-**Decision.** Reorg handling is tested to a configured depth and no deeper.
+**Decision.** The reorg test simulates one shallow reorganisation: a local chain
+reverted to a snapshot taken just before a fill, so the chain forgets a trade
+the offchain ledger remembers.
 
 **Why.** There is no depth at which a chain is provably final, so "test all
-reorgs" has no end. The test asserts the system's stated assumption, and the
-assumption is a number someone has to own.
+reorgs" has no end. The first question is whether a reorg is noticed at all,
+and one dropped trade answers it.
 
-**Cost.** A reorg deeper than the configured depth is untested, and the system
-would be wrong in a way nothing here would catch.
+**Cost.** Deeper reorgs, and reorgs that drop a deposit, a withdrawal or a
+cancel rather than a fill, are not simulated. The system has no stated finality
+depth for a test to hold it to, and that number is a decision someone has to
+own before it can be tested.
 
-**Reverses if.** The chain's finality properties change, or a reorg deeper than
-the assumption is observed anywhere.
+**Reverses if.** Recovery ships, or a finality depth is chosen. Either one makes
+depth a parameter worth sweeping.
 
-### Concurrency is tested by interleaving, not by racing
+### Concurrency is tested by ordering, not by racing
 
-**Decision.** Race conditions are found by driving deterministic interleavings
-of operations, not by running many threads and hoping.
+**Decision.** The engine is a single writer, so the races that matter inside it,
+a cancel against a fill above all, are questions about the order operations
+arrive in. The property generator produces those orderings, cancels of live,
+partly filled and already finished orders among them, and every invariant is
+checked after each step. Nothing runs many clients against the service at once
+and hopes.
 
 **Why.** A test that races is a test that passes on a fast machine and fails in
-CI at four in the morning, and gets retried until it passes. Deterministic
-interleaving reproduces on demand, shrinks to a minimal sequence, and can be
-committed as a regression test.
+CI at four in the morning, and gets retried until it passes. A generated
+ordering reproduces on demand, shrinks to a minimal sequence, and can be
+committed to the corpus as a regression test.
 
-**Cost.** Only the interleavings the harness knows how to produce are explored.
-A real race arising from a mechanism the model does not represent, a database
-lock, a network buffer, will not be found this way.
+**Cost.** Only orderings of whole operations are explored. A race below the
+engine, two HTTP requests interleaving inside the service, or a queue in front
+of the engine reordering them, is not represented, and there is no concurrent
+harness against the running service to find one.
 
-**Reverses if.** A production race is found that the interleaving model could
-not have represented. Then the model gains that mechanism, rather than the suite
-gaining a sleep.
+**Reverses if.** The service gains any concurrency of its own, such as a worker
+pool or a queue, or a production race is found that whole-operation ordering
+could not have represented. Then the harness gains that mechanism, rather than
+the suite gaining a sleep.
 
 ### Maker-side funding is not reserved offchain
 
@@ -222,3 +237,8 @@ A divergence says the two engines disagree. It does not say which is wrong. Both
 have been wrong. That is the technique working: the suite narrows the question
 from "is the exchange correct" to "these two disagree on this five-command
 sequence", and a human decides against the spec.
+
+And agreement does not say either is right. Both engines once left the same
+crossed book, and the differential suite passed thousands of runs over it. The
+rules the spec states outright are therefore also checked on each engine alone,
+in `qe/suites/property/book-invariants.test.ts`.
