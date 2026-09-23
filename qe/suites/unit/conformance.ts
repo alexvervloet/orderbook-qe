@@ -250,6 +250,9 @@ export function describeMatchingEngine(name: string, create: Factory): void {
 
         expect(result.trades).toEqual([])
         expect(engine.snapshot().asks[0]!.quantity).toBe(1n)
+        // Stopped means stopped: the remainder is cancelled, not rested.
+        expect(result.outcome).toEqual({ kind: 'partially_filled_and_cancelled', unfilled: 1n })
+        expect(engine.snapshot().bids).toEqual([])
       })
 
       it('cancel_taker keeps trades already made against other accounts', () => {
@@ -262,6 +265,8 @@ export function describeMatchingEngine(name: string, create: Factory): void {
 
         expect(result.trades).toHaveLength(1)
         expect(result.trades[0]!.makerOrderId).toBe('theirs')
+        expect(result.outcome).toEqual({ kind: 'partially_filled_and_cancelled', unfilled: 1n })
+        expect(engine.snapshot().bids).toEqual([])
       })
 
       it('cancel_maker removes the resting order and carries on matching', () => {
@@ -288,6 +293,10 @@ export function describeMatchingEngine(name: string, create: Factory): void {
         expect(result.trades).toEqual([])
         // Bob's order is untouched.
         expect(engine.snapshot().asks).toHaveLength(1)
+        // And the taker went nowhere. A GTC remainder resting at 102 here
+        // would sit level with Bob's ask.
+        expect(result.outcome).toEqual({ kind: 'partially_filled_and_cancelled', unfilled: 2n })
+        expect(engine.snapshot().bids).toEqual([])
       })
     })
 
