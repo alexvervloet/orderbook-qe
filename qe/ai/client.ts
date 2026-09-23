@@ -44,9 +44,9 @@ export function estimateCost(model: string, inputTokens: number, outputTokens: n
 export function createClient(): Anthropic {
   if (process.env.ANTHROPIC_API_KEY === undefined) {
     throw new Error(
-      'ANTHROPIC_API_KEY is not set. On this machine the key lives in the ' +
-        'Keychain, so run these through the secrun wrapper:\n' +
-        '  secrun npm run ai:generate',
+      'ANTHROPIC_API_KEY is not set. Export it, or pass it through whatever ' +
+        'secret manager you use:\n' +
+        '  ANTHROPIC_API_KEY=... npm run ai:triage',
     )
   }
   return new Anthropic()
