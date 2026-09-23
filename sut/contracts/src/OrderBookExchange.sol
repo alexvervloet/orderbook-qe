@@ -158,17 +158,15 @@ contract OrderBookExchange {
 
         // Escrow up front at the order's own limit, plus the worse of the two
         // fee rates. A fill at a better price or as a maker refunds the excess.
-        uint256 worstFeeBps = takerFeeBps > makerFeeBps ? takerFeeBps : makerFeeBps;
         uint256 notionalAtLimit = _notional(quantity, price);
+        uint256 feeLock = uint256(quantity) * _feePerLot(price);
         if (isBuy) {
-            uint256 notional = notionalAtLimit;
-            uint256 lock = notional + _ceilDiv(notional * worstFeeBps, BPS);
+            uint256 lock = notionalAtLimit + feeLock;
             if (availableQuote[msg.sender] < lock) revert InsufficientBalance();
             availableQuote[msg.sender] -= lock;
             lockedQuote[msg.sender] += lock;
         } else {
             uint256 lockBase = uint256(quantity) * baseScale;
-            uint256 feeLock = _ceilDiv(notionalAtLimit * worstFeeBps, BPS);
             if (availableBase[msg.sender] < lockBase) revert InsufficientBalance();
             if (availableQuote[msg.sender] < feeLock) revert InsufficientBalance();
             availableBase[msg.sender] -= lockBase;
@@ -304,9 +302,8 @@ contract OrderBookExchange {
     }
 
     function _unlockFor(address trader, bool isBuy, uint128 price, uint128 remaining) private {
-        uint256 worstFeeBps = takerFeeBps > makerFeeBps ? takerFeeBps : makerFeeBps;
         uint256 notional = uint256(remaining) * price * quoteScale;
-        uint256 feeLock = _ceilDiv(notional * worstFeeBps, BPS);
+        uint256 feeLock = uint256(remaining) * _feePerLot(price);
 
         if (isBuy) {
             lockedQuote[trader] -= notional + feeLock;
@@ -390,6 +387,28 @@ contract OrderBookExchange {
 
     function _isBetter(bool isBuy, uint128 a, uint128 b) private pure returns (bool) {
         return isBuy ? a > b : a < b;
+    }
+
+    /**
+     * @dev Worst-case fee escrowed per lot at a given price.
+     *
+     * Escrow is taken for a whole order and released one fill at a time, so the
+     * two calculations have to agree exactly. Rounding the fee up once on the
+     * total does not agree: ceil(a + b) is not ceil(a) + ceil(b), so releasing
+     * per fill can try to release more than was ever locked, and the subtraction
+     * underflows. The order then cannot be filled or cancelled and the trader's
+     * funds are stuck.
+     *
+     * Charging a ceiling per lot makes locking and releasing the same
+     * arithmetic in a different order, which always balances. It escrows
+     * slightly more than the fee will be; the surplus returns on settlement.
+     *
+     * Found by the offchain/onchain differential suite on a market whose fees
+     * do not divide evenly. See docs/FAILURE-MODES.md.
+     */
+    function _feePerLot(uint128 price) private view returns (uint256) {
+        uint256 worstFeeBps = takerFeeBps > makerFeeBps ? takerFeeBps : makerFeeBps;
+        return _ceilDiv(uint256(price) * quoteScale * worstFeeBps, BPS);
     }
 
     /**
