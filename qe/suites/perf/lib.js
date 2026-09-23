@@ -14,6 +14,12 @@ export const TAKERS = ['taker-1', 'taker-2']
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
+// A 422 is the exchange refusing an order for a stated reason, which is it
+// working. By default k6 counts every 4xx in http_req_failed, so an unfunded
+// maker pushed the failure rate over its 0.1% budget without anything being
+// wrong. Server errors and dropped connections still count.
+http.setResponseCallback(http.expectedStatuses(200, 201, 422))
+
 /**
  * Prices cluster around a mid so orders actually cross. A load test that
  * places orders nobody can match measures the cost of an insert, not the cost
