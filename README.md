@@ -82,7 +82,7 @@ differential test between them mean anything.
 
 ```bash
 npm install
-npm test                 # unit, property, contract, integration, consistency
+npm test                 # 190 tests: unit, property, contract, integration, consistency, chaos
 npm run test:e2e         # Playwright, needs a browser
 cd sut/contracts && forge test
 docker compose up backend
@@ -101,8 +101,9 @@ Foundry must be installed and the contracts built.
 | Integration | Matching and settlement cannot disagree | 0.2s |
 | Consistency | Offchain engine against the Solidity contract | 3.6s |
 | Solidity | Units, fuzz, and eight invariants over a handler | 1.0s |
-| E2E | Browser against backend, six cases only | 2.4s |
-| Performance | k6 load, stress and latency against budgets | minutes |
+| Chaos | Reorg detection, network faults, recovery | 4s |
+| E2E | Browser against backend, six cases only | 2.6s |
+| Performance | k6 load, stress, latency and soak against budgets | minutes |
 
 Timings are measured, not estimated, and reproducible with `npm run ci:timings`.
 

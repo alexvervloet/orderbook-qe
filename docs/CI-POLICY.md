@@ -38,7 +38,8 @@ lost most of its value even when it works.
 | Solidity invariants, 1,000 runs x 128 depth | 53.5s | nightly |
 | Mutation testing | minutes | nightly |
 | Load, stress and latency | minutes | nightly |
-| Chaos: reorg and fault injection | ~3s | nightly |
+| Chaos: reorg, network faults, recovery | ~4s | nightly |
+| Soak | hours | weekly |
 | Soak | hours | weekly |
 
 The pull request tier comes to roughly 55 seconds of work, most of it the
