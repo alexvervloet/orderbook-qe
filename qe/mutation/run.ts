@@ -189,11 +189,7 @@ function runSuite(target: Target): SuiteResult {
     return 'survived' // suite passed, so the mutant lived
   } catch (error) {
     const e = error as { code?: unknown; signal?: string | null; status?: number | null }
-    // A spawn failure has a string code such as ENOENT. With forge missing,
-    // every contract mutant used to count as killed and scored 100%.
-    if (typeof e.code === 'string') {
-      throw new HarnessError(`could not run ${target.command.join(' ')}: ${e.code}`)
-    }
+    // Checked first: a timeout also carries a string code, ETIMEDOUT.
     if (e.signal === 'SIGKILL') {
       // The mutant hung. The runner is dead but its workers are not, and they
       // are stuck in whatever loop the mutant created.
@@ -202,6 +198,12 @@ function runSuite(target: Target): SuiteResult {
     }
     // A child killed by an interrupt did not fail a test. It was stopped.
     if (e.signal === 'SIGINT' || e.signal === 'SIGTERM') return 'interrupted'
+    // A child that never ran has no exit status and no signal, only a code
+    // such as ENOENT. With forge missing, every contract mutant used to count
+    // as killed and the contract scored 100%.
+    if (typeof e.status !== 'number') {
+      throw new HarnessError(`could not run ${target.command.join(' ')}: ${String(e.code)}`)
+    }
     return 'killed'
   }
 }
