@@ -47,7 +47,12 @@ function statusOf(outcome: OrderOutcome): { status: string; reason: string | nul
 }
 
 function encodeSubmit(result: SubmitResult, requested: bigint): unknown {
-  const filled = result.trades.reduce((sum, t) => sum + t.quantity, 0n)
+  // Only this order's own fills. The result also carries every trade from any
+  // stop cascade the order set off, most of them between other orders, and
+  // summing those reported fills this order never had.
+  const filled = result.trades
+    .filter((t) => t.takerOrderId === result.orderId || t.makerOrderId === result.orderId)
+    .reduce((sum, t) => sum + t.quantity, 0n)
   const { status, reason } = statusOf(result.outcome)
   return {
     orderId: result.orderId,
