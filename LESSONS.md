@@ -472,3 +472,28 @@ about the generator, not the contract, and it fails at whatever rate the
 generator happens to produce the dull case. And after an invariant failure,
 check for "Replayed invariant failure from persisted file" before believing
 the next result.
+
+## The flake detector read nothing, then read one seed ten times
+
+**Expected.** `npm run flake:detect` runs the suite ten times and names
+anything that is not unanimous.
+
+**What happened.** It had never read a result. It passed `--outputFile=-` to
+vitest expecting stdout, and vitest wrote a file literally named `-` instead.
+Every run was "unparseable", nothing was recorded, and the tool printed "no
+flaky tests" and exited 0. It also only ever ran vitest, so the invariant check
+that failed one Foundry run in four was out of its reach entirely.
+
+Adding forge turned up a second trap. Twenty plain `forge test` runs of the old
+invariant check failed five times. Ten `forge test --json` runs failed none.
+Whatever seeding forge does by default, it was not producing independent runs
+in JSON mode here, so the detector would have run one seed ten times.
+
+**Fix.** Vitest writes its report to a real path that the tool reads back. Each
+forge run gets an explicit random `--fuzz-seed`, recorded in the report so a
+failure can be replayed. A run with no usable report fails the job, as does a
+job that read no tests at all. Against the old invariant file it now reports
+the flaky check at 17%.
+
+**Next time.** A detector has to be shown the thing it detects before its
+silence means anything. Point it at a known flake once, on purpose.
