@@ -136,6 +136,44 @@ export const EQUIVALENT_MUTANTS: readonly EquivalentMutant[] = [
       'comparison.',
     ].join(' '),
   },
+
+  // ---- the contract ----
+  {
+    file: 'sut/contracts/src/OrderBookExchange.sol',
+    source: 'uint128 fill = remaining < maker.remaining ? remaining : maker.remaining;',
+    mutator: 'cmp-lt-lte',
+    argument: 'A min. The branches differ only when the two are equal, and then both are the same value.',
+  },
+  {
+    file: 'sut/contracts/src/OrderBookExchange.sol',
+    source: 'if (level.totalQuantity >= order.remaining) level.totalQuantity -= order.remaining;',
+    mutator: 'cmp-gte-gt',
+    argument:
+      'At equality the >= branch subtracts to zero and the else branch assigns zero. ' +
+      'Same total either way.',
+  },
+  {
+    file: 'sut/contracts/src/OrderBookExchange.sol',
+    source: 'return isBuy ? a > b : a < b;',
+    mutator: 'cmp-gt-gte',
+    argument:
+      '_isBetter is only called from _linkLevel, which only runs for a price with no ' +
+      'level yet, and compares it with prices that do have levels. The two are never ' +
+      'equal, so > and >= cannot differ. Equivalent by caller: a new call site that ' +
+      'can pass equal prices makes this entry wrong.',
+  },
+  {
+    file: 'sut/contracts/src/OrderBookExchange.sol',
+    source: 'return isBuy ? a > b : a < b;',
+    mutator: 'cmp-lt-lte',
+    argument: 'Same caller argument as the > mutant on this line.',
+  },
+  {
+    file: 'sut/contracts/src/OrderBookExchange.sol',
+    source: 'uint256 worstFeeBps = takerFeeBps > makerFeeBps ? takerFeeBps : makerFeeBps;',
+    mutator: 'cmp-gt-gte',
+    argument: 'A max. When the two rates are equal either branch returns the same rate.',
+  },
 ]
 
 /**
