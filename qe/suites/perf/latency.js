@@ -14,7 +14,8 @@ export const options = {
   scenarios: {
     light: {
       executor: 'constant-arrival-rate',
-      rate: 50,
+      // Two orders per iteration, so 50 requests a second.
+      rate: 25,
       timeUnit: '1s',
       duration: __ENV.DURATION || '60s',
       preAllocatedVUs: 10,
@@ -31,20 +32,29 @@ export const options = {
 export default function () {
   // An order that crosses does matching work; one that rests does not. Timing
   // them together produces an average that describes neither.
-  const crossing = Math.random() < 0.5
-  const side = Math.random() < 0.5 ? 'buy' : 'sell'
-  const price = crossing
-    ? priceNear(side === 'buy' ? 105 : 95, 1)
-    : priceNear(side === 'buy' ? 90 : 110, 1)
+  //
+  // Each iteration rests a maker and then sends a taker at the same price, so
+  // the taker has something to cross. The first version guessed instead: its
+  // "crossing" buys at 104 to 106 sat below asks at 109 to 111, and in a
+  // simulation half of the "matching" samples were plain inserts.
+  const makerSide = Math.random() < 0.5 ? 'buy' : 'sell'
+  const takerSide = makerSide === 'buy' ? 'sell' : 'buy'
+  const price = priceNear(makerSide === 'buy' ? 90 : 110, 1)
 
-  const response = placeOrder(
-    crossing ? pick(TAKERS) : pick(MAKERS),
-    side,
-    price,
-    2,
-    crossing ? 'matching' : 'resting',
-  )
-  ;(crossing ? matchLatency : restLatency).add(response.timings.duration)
+  record(placeOrder(pick(MAKERS), makerSide, price, 2, 'resting'))
+  record(placeOrder(pick(TAKERS), takerSide, price, 2, 'matching'))
+}
+
+/**
+ * File the sample by what the order actually did, not by what it was meant to
+ * do. A refused maker leaves the taker nothing to cross, and that taker's
+ * latency is an insert's, whatever it was tagged.
+ */
+function record(response) {
+  if (response.status !== 201) return
+  const body = response.json()
+  if (Number(body.filled) > 0) matchLatency.add(response.timings.duration)
+  else if (body.status === 'resting') restLatency.add(response.timings.duration)
 }
 
 export function handleSummary(data) {
