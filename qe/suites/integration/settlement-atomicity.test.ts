@@ -109,6 +109,47 @@ describe('an order that cannot settle never matches', () => {
     expect(result.trades).toEqual([])
   })
 
+  it('refuses an unfunded stop at submission, before it can trigger', () => {
+    // A stop skipped the check entirely. When it later triggered inside
+    // somebody else's order, settlement threw mid-submit, after the engine
+    // had already moved: the original bug, by another door.
+    exchange.submit(order('rich', 'sell', 100n, 5n))
+
+    const stop = exchange.submit(
+      order('broke', 'buy', null, 5n, { type: 'stop_market', tif: 'IOC', triggerPrice: 100n }),
+    )
+    expect(reason(stop)).toBe('insufficient_funds')
+
+    // The trade that would have triggered it goes through cleanly.
+    exchange.deposit('buyer', 0n, 10n ** 30n)
+    expect(() => exchange.submit(order('buyer', 'buy', 100n, 1n))).not.toThrow()
+    expect(exchange.position('broke')).toBe(0n)
+  })
+
+  it('prices a stop_limit at its limit, like any limit order', () => {
+    exchange.deposit('small', 0n, 1n)
+    const stop = exchange.submit(
+      order('small', 'buy', 100n, 5n, { type: 'stop_limit', triggerPrice: 100n }),
+    )
+    expect(reason(stop)).toBe('insufficient_funds')
+  })
+
+  it('prices a stop_market into an empty book at its trigger', () => {
+    // Nothing to trade against yet, so the trigger is the only price there
+    // is. The order still has to be affordable at that price.
+    const stop = exchange.submit(
+      order('broke', 'buy', null, 5n, { type: 'stop_market', tif: 'IOC', triggerPrice: 100n }),
+    )
+    expect(reason(stop)).toBe('insufficient_funds')
+  })
+
+  it('accepts a funded stop', () => {
+    const stop = exchange.submit(
+      order('rich', 'buy', null, 5n, { type: 'stop_market', tif: 'IOC', triggerPrice: 100n }),
+    )
+    expect(stop.outcome.kind).toBe('triggered_later')
+  })
+
   it('still fills an account that can afford the trade', () => {
     exchange.submit(order('rich', 'sell', 100n, 5n))
     exchange.deposit('buyer', 0n, 10n ** 30n)
