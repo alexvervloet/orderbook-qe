@@ -1,0 +1,23 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+# Fuzz and invariant depth is low by default so a pull request stays fast, and
+# is raised by the nightly profile. See docs/CI-POLICY.md.
+[profile.default.fuzz]
+runs = 256
+
+[profile.default.invariant]
+runs = 64
+depth = 32
+fail_on_revert = false
+
+[profile.nightly.fuzz]
+runs = 20000
+
+[profile.nightly.invariant]
+runs = 1000
+depth = 128
