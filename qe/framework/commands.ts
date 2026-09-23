@@ -74,17 +74,22 @@ function orderRequest(index: number): fc.Arbitrary<OrderRequest> {
           triggerPrice: null,
           stpMode,
         }
+        // Every shape takes the generated time in force. The first version
+        // pinned most of them (market always IOC, stops and icebergs always
+        // one TIF), so a market FOK, a post-only IOC or a stop_limit FOK were
+        // never generated, and those are the combinations sections 4 to 6 of
+        // the spec spend the most words on.
         switch (shape) {
           case 'market':
-            return { ...base, type: 'market', tif: 'IOC', price: null }
+            return { ...base, type: 'market', tif: t, price: null }
           case 'post_only':
-            return { ...base, type: 'limit', tif: 'GTC', price: px, postOnly: true }
+            return { ...base, type: 'limit', tif: t, price: px, postOnly: true }
           case 'iceberg': {
             const display = qty / BigInt(displayDivisor)
             return {
               ...base,
               type: 'limit',
-              tif: 'GTC',
+              tif: t,
               price: px,
               displayQuantity: display > 0n ? display : 1n,
             }
@@ -95,7 +100,7 @@ function orderRequest(index: number): fc.Arbitrary<OrderRequest> {
             return {
               ...base,
               type: 'stop_market',
-              tif: 'IOC',
+              tif: t,
               price: null,
               triggerPrice: px + BigInt(triggerOffset),
             }
@@ -103,7 +108,7 @@ function orderRequest(index: number): fc.Arbitrary<OrderRequest> {
             return {
               ...base,
               type: 'stop_limit',
-              tif: 'GTC',
+              tif: t,
               price: px,
               triggerPrice: px + BigInt(triggerOffset),
             }
