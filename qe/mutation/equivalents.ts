@@ -23,18 +23,6 @@ export interface EquivalentMutant {
 }
 
 export const EQUIVALENT_MUTANTS: readonly EquivalentMutant[] = [
-  {
-    file: 'sut/backend/engine/matching-engine.ts',
-    source: 'if (!crosses(r, price)) break // prices are best-first, so nothing further can cross',
-    mutator: 'break-to-continue',
-    argument: [
-      'Replacing break with continue skips the accumulation line rather than',
-      'reaching it, and because the price array is sorted best-first, every',
-      'price after the first non-crossing one also fails to cross. The loop',
-      'therefore adds nothing either way and returns the same total by a slower',
-      'route. Cost me an hour and a wrong conclusion; see LESSONS.md.',
-    ].join(' '),
-  },
   // ---- min/abs/comparator helpers: the mutated case is the equal case ----
   {
     file: 'sut/backend/engine/matching-engine.ts',
@@ -150,8 +138,19 @@ export const EQUIVALENT_MUTANTS: readonly EquivalentMutant[] = [
   },
 ]
 
+/**
+ * Whether this exact mutant, operator included, is argued equivalent above.
+ *
+ * Matching on the line alone excused every mutant on a listed line. The
+ * reduce-only lines are listed for their `>`/`<` boundary, and that silently
+ * dropped the `===` and `&&` mutants on the same lines from the score too, all
+ * eight of them killable. An argument covers one mutant, not a line.
+ */
 export function isKnownEquivalent(site: MutantSite): boolean {
   return EQUIVALENT_MUTANTS.some(
-    (known) => known.file === site.file && known.source === site.original,
+    (known) =>
+      known.file === site.file &&
+      known.source === site.original &&
+      known.mutator === site.mutator.id,
   )
 }
