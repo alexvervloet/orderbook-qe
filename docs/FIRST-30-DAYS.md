@@ -52,10 +52,17 @@ engine from the specification, then drive random order sequences through both
 and compare every observable after every command.
 
 It is the only technique on the list that finds bugs nobody thought to look for.
-In this repository, two of six seeded defects were invisible to 106 hand-written
-tests and immediately obvious to the differential suite, and both were cached
-aggregates that a human would never write an assertion about. The full scoreboard
-is in [../LESSONS.md](../LESSONS.md).
+In this repository, two of six seeded defects were invisible to the 106
+hand-written tests of the time and immediately obvious to the differential
+suite, and both were cached aggregates that a human would never write an
+assertion about. The full scoreboard is in [../LESSONS.md](../LESSONS.md).
+
+It has one blind spot, and I would plan for it from the start. Two engines
+written by one person from one spec can agree on something wrong. Both engines
+here once left the same crossed book, and the differential suite passed
+thousands of runs over it. So every rule the spec states outright, "the book is
+never crossed at rest", gets a property of its own that checks one engine with
+no oracle.
 
 **Conservation properties for money.** Value in equals value out plus fees, over
 any sequence. Fees round in a stated direction, always. These are cheap to write
@@ -83,12 +90,12 @@ is where this platform's distinctive risk lives: drive the same order sequence
 through the offchain engine and the contract and require them to agree.
 
 That suite found the worst bug in this repository, an escrow underflow that
-permanently strands a trader's funds. It was invisible to 23 contract unit
-tests, three fuzz tests and eight invariants, because the default market's
-numbers divided evenly and made the bug unreachable.
+permanently strands a trader's funds. It was invisible to the 23 contract tests of
+the time, three of them fuzz tests, and eight invariants, because the default
+market's numbers divided evenly and made the bug unreachable.
 
 **Deliverables:** contract tests on all protocols, contract invariants, and
-offchain/onchain consistency running nightly.
+offchain/onchain consistency on every pull request, deeper nightly.
 
 ## Week 4: make it stick, and hand it over
 
@@ -129,16 +136,15 @@ target is the flows where failure is unrecoverable, protected properly.
 **Not add end-to-end tests for anything testable lower down.** Browser tests are
 slow, fail for unrelated reasons, and give worse failure messages. This
 repository has six, and one of them found a real bug, which was then rewritten
-as an integration test that runs in four milliseconds and says exactly what
-broke.
+as an integration test that runs in milliseconds and says exactly what broke.
 
 **Not introduce a quarantine for flaky tests.** Quarantine sounds like a
 compromise and works as a graveyard. A flaky test gets one working day to be
 fixed or deleted.
 
 **Not test the frontend as a rendering surface.** The frontend risk that matters
-is showing a number that disagrees with the backend, and that is a consistency
-assertion, not a snapshot.
+is showing a number that disagrees with the backend, and that is an assertion
+that the browser and the backend agree, not a snapshot.
 
 ## What I would be asking engineers, from week one
 
