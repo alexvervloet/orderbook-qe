@@ -12,8 +12,9 @@ import { describe, expect, it } from 'vitest'
 import { ProductionMatchingEngine } from '../../../sut/backend/engine/matching-engine.ts'
 import { ReferenceEngine } from '../../model/reference-engine.ts'
 import { Ledger, type Market } from '../../../sut/backend/ledger.ts'
-import { loadCorpus, toOrderRequest } from '../../framework/corpus.ts'
+import { decodeCommand, loadCorpus, toOrderRequest } from '../../framework/corpus.ts'
 import { observeState } from '../../framework/differential.ts'
+import { ENGINES, replayDifferential, replayInvariants } from '../../framework/sessions.ts'
 
 const corpus = loadCorpus()
 
@@ -25,6 +26,23 @@ describe('saved counterexamples', () => {
   })
 
   for (const entry of corpus) {
+    if (entry.kind === 'session') {
+      describe(entry.id, () => {
+        const commands = entry.commands.map(decodeCommand)
+
+        it(`replays without the engines diverging: ${entry.summary}`, () => {
+          expect(replayDifferential(commands)?.message ?? null).toBeNull()
+        })
+
+        for (const [name, create] of ENGINES) {
+          it(`replays with the ${name} holding every book invariant`, () => {
+            expect(replayInvariants(create, commands)?.message ?? null).toBeNull()
+          })
+        }
+      })
+      continue
+    }
+
     describe(entry.id, () => {
       const market: Market = {
         symbol: entry.id,
