@@ -24,7 +24,9 @@
     "mutate": "node --experimental-strip-types qe/mutation/run.ts",
     "flake:detect": "node --experimental-strip-types qe/tools/flake.ts",
     "ci:timings": "node --experimental-strip-types qe/tools/timings.ts",
-    "select": "node --experimental-strip-types qe/select/affected.ts"
+    "select": "node --experimental-strip-types qe/select/affected.ts",
+    "ai:triage": "node --experimental-strip-types qe/ai/triage.ts",
+    "ai:generate": "node --experimental-strip-types qe/ai/generate.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -38,6 +40,7 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
+    "@fastify/static": "^10.1.4",
     "@fastify/websocket": "^11.3.1",
     "fastify": "^5.12.5",
     "ws": "^8.21.3",

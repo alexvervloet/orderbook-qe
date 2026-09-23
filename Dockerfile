@@ -14,6 +14,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY spec ./spec
 COPY sut/backend ./sut/backend
+COPY sut/frontend ./sut/frontend
 
 # Runs as a non-root user. `node` exists in the base image already.
 USER node

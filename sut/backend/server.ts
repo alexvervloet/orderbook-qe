@@ -6,7 +6,10 @@
  * REST has a response contract, JSON-RPC has an error-code contract, and the
  * WebSocket feed has an ordering contract.
  */
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import Fastify, { type FastifyInstance } from 'fastify'
+import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import { z } from 'zod'
 import { Exchange } from './exchange.ts'
@@ -91,6 +94,12 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
   const exchange = options.exchange ?? new Exchange(options.market ?? DEFAULT_MARKET)
   const app = Fastify({ logger: false })
   await app.register(websocket)
+
+  // The UI is served by the same origin as the API. Same-origin keeps the
+  // end-to-end tests honest: no CORS shim standing between the page and the
+  // service that a production deployment would not have.
+  const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '../frontend')
+  await app.register(fastifyStatic, { root: frontendDir, prefix: '/' })
 
   app.decorate('exchange', exchange)
 
