@@ -133,8 +133,11 @@ gaining a sleep.
 ### Maker-side funding is not reserved offchain
 
 **Decision.** The offchain exchange checks that an *incoming* order can be paid
-for before it matches. It does not reserve a resting order's funds, so a maker
-whose balance falls after their order rests can still fail to settle.
+for before it matches, stops included. It does not reserve funds once an order
+is accepted, so a maker whose balance falls after their order rests can still
+fail to settle, and so can a waiting stop whose account spent the money before
+the trigger. A stop_market is also only priced as well as the book allows at
+submission: the far side of the book, or its trigger if that side is empty.
 
 **Why this is not symmetric with the contract.** The Solidity contract escrows
 at placement: funds are locked when an order rests and released as it fills.
