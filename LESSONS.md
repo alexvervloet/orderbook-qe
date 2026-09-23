@@ -263,3 +263,43 @@ the happy path. I wrote the `finally` and thought the problem was handled; a
 And the signal that something was wrong was arithmetic, not intuition: fifty
 minutes against a seven-minute estimate is not "slower than expected", it is a
 different failure. Estimating first is what made the hang visible.
+
+## Most surviving mutants were equivalent, and finding that out is the work
+
+**Expected.** A 93% kill rate with 20 survivors meant roughly 20 gaps in the
+tests.
+
+**What happened.** Thirteen of the twenty could not be killed by any test.
+
+They fell into three groups, and none of them is obvious from the diff:
+
+*The mutated branch returns the same value.* `(a < b ? a : b)` becoming
+`(a <= b ? a : b)` differs only when `a` equals `b`, and then both branches
+return the same thing.
+
+*An earlier return makes the boundary unreachable.* `position > 0n` becoming
+`>= 0n` looks like a real off-by-one until you notice that a zero position was
+rejected three lines above, so the comparison never sees zero.
+
+*Equivalence by caller rather than by the function.* `cmpAsc` is only reached
+from a price comparator that guards with `if (pa !== pb)`, so the equal case
+never arrives. This one is the least comfortable of the three: the function is
+not equivalent, its use is, and if anything else ever calls `cmpAsc` the
+registry entry becomes wrong. It is recorded with that caveat attached.
+
+Of the seven genuine survivors, four were real gaps worth closing: an overdraft
+guard that nothing tested at the exact-balance boundary, the guard's choice of
+*which* asset to report, and a stop order with a null trigger price that no
+builder could produce. One was not a gap at all: `isEmpty` on the book side was
+dead code, defined and never called. The right response to a survivor on unused
+code is to delete the code.
+
+**Next time.** Budget the triage, not just the run. The run took twenty minutes
+unattended; classifying twenty survivors took longer and was the part that
+produced the value. A mutation score quoted without that pass is not a
+measurement, it is a starting point, and quoting it as a result overstates the
+suite in one direction and the gaps in the other.
+
+Write the argument down for each equivalent mutant, in the code. I will not
+remember why `cmpAsc` was safe in six months, and neither will anyone else, and
+the alternative is re-deriving it every nightly run.
