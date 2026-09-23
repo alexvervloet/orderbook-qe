@@ -303,3 +303,32 @@ suite in one direction and the gaps in the other.
 Write the argument down for each equivalent mutant, in the code. I will not
 remember why `cmpAsc` was safe in six months, and neither will anyone else, and
 the alternative is re-deriving it every nightly run.
+
+## A skip decided before the flag was set
+
+**Expected.** The network fault tests would detect Toxiproxy in `beforeAll`, set
+`available = true`, and run.
+
+**What happened.** They skipped, against a Toxiproxy that was up and healthy,
+and the suite reported green.
+
+Vitest registers `describe` blocks during collection, which happens before any
+hook runs. So `describe.skip` was decided while `available` was still its
+initial `false`, and no value assigned in `beforeAll` could ever change that.
+The suite would have skipped forever.
+
+**Fix.** A top-level `await` at module load, so the check happens during
+collection, when the decision is made.
+
+**Next time.** Anything that decides whether a test runs has to be evaluated at
+collection time, not in a hook. And the general shape of this is the third
+instance of the same failure in this repository: a green suite that was not
+running. A property suite generating six-command sessions, an invariant handler
+swallowing every revert, and now a conditional skip that could never be false.
+
+None of the three announced itself. All three were found by asking a number
+whether it made sense: 30 milliseconds for 360 sessions, `reverts: 0` on a
+contract that should have been reverting constantly, and five skipped tests
+against a service that was demonstrably up. The habit that catches this class is
+not writing better tests, it is reading the run output as data rather than
+scanning it for red.
