@@ -166,11 +166,6 @@ export class Exchange {
    * Accepting one they cannot afford corrupts the book.
    */
   #worstCaseShortfall(request: OrderRequest): string | null {
-    if (request.type === 'stop_market' || request.type === 'stop_limit') {
-      // Stops are priced when they trigger, not when they are submitted.
-      return null
-    }
-
     const worstPrice = this.#worstExecutionPrice(request)
     if (worstPrice === null) return null // nothing to trade against
 
@@ -187,14 +182,30 @@ export class Exchange {
     return balance.quote >= fee ? null : 'quote'
   }
 
-  /** The least favourable price this order could execute at. */
+  /**
+   * The least favourable price this order could execute at.
+   *
+   * Stops are checked at submission like everything else. They used to be
+   * skipped, "priced when they trigger", except nothing priced them then: an
+   * unfunded stop triggered inside somebody else's order and settlement threw
+   * after the engine had moved. A stop's funds can still fall after it is
+   * accepted, which is the maker-side gap in docs/NON-GOALS.md, but an account
+   * that could never pay is refused at the door.
+   */
   #worstExecutionPrice(request: OrderRequest): Ticks | null {
-    if (request.type !== 'market') return request.price
+    if (request.type === 'limit' || request.type === 'stop_limit') return request.price
     // A market order has no limit, so the worst case is the far side of the
     // book. An empty book means no execution is possible at all.
     const { bids, asks } = this.book()
-    const levels = request.side === 'buy' ? asks : bids
-    return levels.at(-1)?.price ?? null
+    const farSide = (request.side === 'buy' ? asks : bids).at(-1)?.price ?? null
+    if (request.type === 'market') return farSide
+    // A stop_market into an empty book will still trade once it triggers, and
+    // the trigger is the only price on offer. Take the worse of the two.
+    const trigger = request.triggerPrice!
+    if (farSide === null) return trigger
+    return request.side === 'buy'
+      ? (farSide > trigger ? farSide : trigger)
+      : (farSide < trigger ? farSide : trigger)
   }
 
   #publish(message: MarketDataMessage): void {
