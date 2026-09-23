@@ -83,35 +83,43 @@ describe('reconciliation', () => {
   })
 
   it('detects the divergence a reorg leaves behind', async () => {
-    const engine = new ProductionMatchingEngine()
-    const ledger = fundedLedger()
+    // Every test here restores the chain it found. This one did not, so the
+    // tests after it inherited a resting maker and passed only because the
+    // reconciler compares totals rather than books.
+    const start = await onchain.chain.snapshot()
+    try {
+      const engine = new ProductionMatchingEngine()
+      const ledger = fundedLedger()
 
-    // Both sides settle the same trade.
-    const maker = limitOrder(1, 'sell', 102n, 3n, 'm1')
-    const taker = limitOrder(0, 'buy', 102n, 3n, 't1')
-    for (const order of [maker, taker]) {
-      for (const trade of engine.submit(order).trades) ledger.settle(trade)
+      // Both sides settle the same trade.
+      const maker = limitOrder(1, 'sell', 102n, 3n, 'm1')
+      const taker = limitOrder(0, 'buy', 102n, 3n, 't1')
+      for (const order of [maker, taker]) {
+        for (const trade of engine.submit(order).trades) ledger.settle(trade)
+      }
+      await onchain.placeLimitOrder(1, false, 102n, 3n)
+
+      // Snapshot after the maker rests but before the trade settles onchain,
+      // then settle, then revert to the snapshot. That is a reorg: the chain
+      // forgets the fill, and the offchain ledger does not.
+      const beforeFill = await onchain.chain.snapshot()
+      await onchain.placeLimitOrder(0, true, 102n, 3n)
+
+      const beforeReorg = await reconcile(ledger, onchain, accounts())
+      expect(beforeReorg.agreed, describeReport(beforeReorg)).toBe(true)
+
+      await onchain.chain.revert(beforeFill)
+
+      const afterReorg = await reconcile(ledger, onchain, accounts())
+      expect(afterReorg.agreed).toBe(false)
+      // The offchain side believes a trade happened that the chain no longer
+      // knows about, so base moved offchain and did not move onchain.
+      expect(afterReorg.divergences.length).toBeGreaterThan(0)
+      expect(afterReorg.netBase).toBe(0n) // the discrepancy nets out across the two traders
+      expect(afterReorg.divergences.some((d) => d.field === 'base')).toBe(true)
+    } finally {
+      await onchain.chain.revert(start)
     }
-    await onchain.placeLimitOrder(1, false, 102n, 3n)
-
-    // Snapshot after the maker rests but before the trade settles onchain,
-    // then settle, then revert to the snapshot. That is a reorg: the chain
-    // forgets the fill, and the offchain ledger does not.
-    const beforeFill = await onchain.chain.snapshot()
-    await onchain.placeLimitOrder(0, true, 102n, 3n)
-
-    const beforeReorg = await reconcile(ledger, onchain, accounts())
-    expect(beforeReorg.agreed, describeReport(beforeReorg)).toBe(true)
-
-    await onchain.chain.revert(beforeFill)
-
-    const afterReorg = await reconcile(ledger, onchain, accounts())
-    expect(afterReorg.agreed).toBe(false)
-    // The offchain side believes a trade happened that the chain no longer
-    // knows about, so base moved offchain and did not move onchain.
-    expect(afterReorg.divergences.length).toBeGreaterThan(0)
-    expect(afterReorg.netBase).toBe(0n) // the discrepancy nets out across the two traders
-    expect(afterReorg.divergences.some((d) => d.field === 'base')).toBe(true)
   })
 
   it('reports a divergence per account rather than stopping at the first', async () => {
