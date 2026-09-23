@@ -11,11 +11,20 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "oxlint spec qe sut",
+    "start": "node --experimental-strip-types sut/backend/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run qe/suites/unit",
     "test:property": "vitest run qe/suites/property",
-    "coverage": "vitest run --coverage"
+    "test:contract": "vitest run qe/suites/contract",
+    "test:consistency": "vitest run qe/suites/consistency",
+    "test:e2e": "playwright test",
+    "coverage": "vitest run --coverage",
+    "check:no-skips": "node --experimental-strip-types qe/tools/no-skips.ts",
+    "mutate": "node --experimental-strip-types qe/mutation/run.ts",
+    "flake:detect": "node --experimental-strip-types qe/tools/flake.ts",
+    "ci:timings": "node --experimental-strip-types qe/tools/timings.ts",
+    "select": "node --experimental-strip-types qe/select/affected.ts"
   },
   "devDependencies": {
     "@types/node": "^22.18.6",
