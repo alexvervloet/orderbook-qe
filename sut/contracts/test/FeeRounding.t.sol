@@ -149,7 +149,8 @@ contract FeeRoundingTest is Test {
             vm.prank(alice);
             exchange.cancelOrder(makerId);
         }
-        if (takerId != 0) {
+        (address takerOwner,,,,,) = exchange.orders(takerId);
+        if (takerOwner != address(0)) {
             vm.prank(bob);
             exchange.cancelOrder(takerId);
         }

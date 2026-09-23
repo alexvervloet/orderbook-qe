@@ -167,9 +167,10 @@ export async function deployExchange(
         quantity,
       ])
       if (reverted !== null) return { orderId: 0n, reverted }
-      const after = await read<bigint>('nextOrderId')
-      // The id only advances when the order actually rested.
-      return { orderId: after > before ? before : 0n, reverted: null }
+      // Every order gets an id, filled or not. Only a resting one has an owner,
+      // and callers use 0n to mean "nothing rested, nothing to cancel".
+      const [owner] = await read<[string]>('orders', [before])
+      return { orderId: BigInt(owner) === 0n ? 0n : before, reverted: null }
     },
     cancelOrder: (trader, orderId) =>
       write(trader, address, exchangeArtifact.abi, 'cancelOrder', [orderId]),

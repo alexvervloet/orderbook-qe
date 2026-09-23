@@ -60,7 +60,9 @@ contract Handler is Test {
         vm.prank(trader);
         try exchange.placeLimitOrder(isBuy, price, quantity) returns (uint64 orderId) {
             ghostPlaced++;
-            if (orderId != 0) liveOrderIds.push(orderId);
+            // Every order gets an id; only one that rested can be cancelled.
+            (address owner,,,,,) = exchange.orders(orderId);
+            if (owner != address(0)) liveOrderIds.push(orderId);
         } catch Panic(uint256 code) {
             ghostPanics++;
             lastPanicCode = code;

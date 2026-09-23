@@ -147,7 +147,9 @@ contract OrderBookExchange {
 
     /**
      * @notice Place a good-till-cancelled limit order.
-     * @return orderId Zero if the order filled completely and never rested.
+     * @return orderId The order's id, which its Traded events also carry. It
+     * is allocated whether or not anything rests; `orders(orderId)` is empty
+     * if the order filled completely.
      */
     function placeLimitOrder(bool isBuy, uint128 price, uint128 quantity)
         external
@@ -175,13 +177,14 @@ contract OrderBookExchange {
             lockedQuote[msg.sender] += feeLock;
         }
 
-        uint128 remaining = _match(isBuy, price, quantity);
+        // Allocated before matching so every Traded event names its taker.
+        orderId = nextOrderId++;
+        uint128 remaining = _match(orderId, isBuy, price, quantity);
         if (remaining == 0) {
-            emit OrderPlaced(0, msg.sender, isBuy, price, quantity);
-            return 0;
+            emit OrderPlaced(orderId, msg.sender, isBuy, price, quantity);
+            return orderId;
         }
 
-        orderId = nextOrderId++;
         orders[orderId] =
             Order({trader: msg.sender, price: price, remaining: remaining, isBuy: isBuy, next: 0, prev: 0});
         _insert(isBuy, price, orderId, remaining);
@@ -217,7 +220,7 @@ contract OrderBookExchange {
 
     // ------------------------------------------------------------ internal
 
-    function _match(bool takerIsBuy, uint128 limitPrice, uint128 quantity)
+    function _match(uint64 takerId, bool takerIsBuy, uint128 limitPrice, uint128 quantity)
         private
         returns (uint128 remaining)
     {
@@ -241,7 +244,7 @@ contract OrderBookExchange {
             maker.remaining -= fill;
             levels[makerSide][makerPrice].totalQuantity -= fill;
 
-            emit Traded(0, makerId, takerIsBuy, makerPrice, fill);
+            emit Traded(takerId, makerId, takerIsBuy, makerPrice, fill);
 
             if (maker.remaining == 0) {
                 _unlink(makerSide, makerPrice, makerId);
