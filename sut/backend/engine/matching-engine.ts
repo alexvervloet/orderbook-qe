@@ -42,6 +42,12 @@ interface MatchRun {
   readonly stoppedByStp: boolean
 }
 
+interface Executed {
+  readonly result: SubmitResult
+  /** The node the order rested as, if it rested. */
+  readonly rested: Node | null
+}
+
 export class ProductionMatchingEngine implements MatchingEngine {
   readonly #bids = new BookSide('buy')
   readonly #asks = new BookSide('sell')
@@ -158,41 +164,48 @@ export class ProductionMatchingEngine implements MatchingEngine {
   }
 
   #submitActive(request: OrderRequest): SubmitResult {
+    const own = this.#execute(request)
+    const cascade = this.#runTriggerCascade()
+    return {
+      orderId: request.id,
+      outcome: this.#outcomeNow(own),
+      trades: [...own.result.trades, ...cascade.trades],
+      cancelled: [...own.result.cancelled, ...cascade.cancelled],
+    }
+  }
+
+  /**
+   * Match one order and rest its remainder. Never runs the trigger cascade: the
+   * order must be finished before a stop it triggered can run, or the stop can
+   * rest on the far side and the remainder rest through it.
+   */
+  #execute(request: OrderRequest): Executed {
     const capped = this.#applyReduceOnly(request)
-    if ('reason' in capped) return reject(request.id, capped.reason)
+    if ('reason' in capped) return { result: reject(request.id, capped.reason), rested: null }
     const effective = capped.request
 
     if (effective.postOnly && this.#wouldCross(effective)) {
-      return reject(request.id, 'post_only_would_cross')
+      return { result: reject(request.id, 'post_only_would_cross'), rested: null }
     }
     if (effective.tif === 'FOK' && this.#fillableQuantity(effective) < effective.quantity) {
-      return reject(request.id, 'fok_not_fully_fillable')
+      return { result: reject(request.id, 'fok_not_fully_fillable'), rested: null }
     }
 
     const run = this.#match(effective)
-    const cascade = this.#runTriggerCascade()
-    const trades = [...run.trades, ...cascade.trades]
-    const cancelled = [...run.cancelled, ...cascade.cancelled]
+    const done = (outcome: SubmitResult['outcome']): SubmitResult => ({
+      orderId: request.id,
+      outcome,
+      trades: run.trades,
+      cancelled: run.cancelled,
+    })
 
-    if (effective.tif === 'FOK' && run.remaining > 0n) {
-      return {
-        orderId: request.id,
-        outcome: { kind: 'partially_filled_and_cancelled', unfilled: run.remaining },
-        trades,
-        cancelled,
-      }
-    }
-    if (run.remaining === 0n) {
-      return { orderId: request.id, outcome: { kind: 'filled' }, trades, cancelled }
-    }
+    if (run.remaining === 0n) return { result: done({ kind: 'filled' }), rested: null }
 
     const canRest = effective.tif === 'GTC' && effective.type === 'limit' && !run.stoppedByStp
     if (!canRest) {
       return {
-        orderId: request.id,
-        outcome: { kind: 'partially_filled_and_cancelled', unfilled: run.remaining },
-        trades,
-        cancelled,
+        result: done({ kind: 'partially_filled_and_cancelled', unfilled: run.remaining }),
+        rested: null,
       }
     }
 
@@ -204,12 +217,18 @@ export class ProductionMatchingEngine implements MatchingEngine {
       displayed,
     )
     this.#index.set(effective.id, node)
-    return {
-      orderId: request.id,
-      outcome: { kind: 'resting', remaining: run.remaining },
-      trades,
-      cancelled,
+    return { result: done({ kind: 'resting', remaining: run.remaining }), rested: node }
+  }
+
+  /** The outcome as it stands on return, after any stop it triggered has run. */
+  #outcomeNow(own: Executed): SubmitResult['outcome'] {
+    const node = own.rested
+    if (node === null) return own.result.outcome
+    if (this.#index.get(node.request.id) === node) {
+      return { kind: 'resting', remaining: node.remaining }
     }
+    if (node.remaining === 0n) return { kind: 'filled' }
+    return { kind: 'partially_filled_and_cancelled', unfilled: node.remaining }
   }
 
   #applyReduceOnly(
@@ -312,8 +331,10 @@ export class ProductionMatchingEngine implements MatchingEngine {
   } {
     const trades: Trade[] = []
     const cancelled: OrderId[] = []
-    const outcomes = new Map<OrderId, SubmitResult['outcome']>()
+    const fired: Executed[] = []
 
+    // In rounds: every stop due now, in sequence order, before any stop that
+    // this round's trades make due.
     for (;;) {
       const last = this.#lastTradePrice
       if (last === null) break
@@ -333,13 +354,15 @@ export class ProductionMatchingEngine implements MatchingEngine {
           price: isMarket ? null : stop.request.price,
           triggerPrice: null,
         }
-        const result = this.#submitActive(converted)
-        trades.push(...result.trades)
-        cancelled.push(...result.cancelled)
-        outcomes.set(converted.id, result.outcome)
+        const own = this.#execute(converted)
+        trades.push(...own.result.trades)
+        cancelled.push(...own.result.cancelled)
+        fired.push(own)
       }
     }
 
+    const outcomes = new Map<OrderId, SubmitResult['outcome']>()
+    for (const own of fired) outcomes.set(own.result.orderId, this.#outcomeNow(own))
     return { trades, cancelled, outcomes }
   }
 

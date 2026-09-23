@@ -144,80 +144,93 @@ export class ReferenceEngine implements MatchingEngine {
     // A stop whose condition is already met by the current last trade price
     // fires now rather than waiting for the next trade. SEMANTICS.md section 9.
     const cascade = this.#runTriggerCascade()
-    if (cascade.firedIds.includes(request.id)) {
-      return {
-        orderId: request.id,
-        outcome: cascade.outcomes.get(request.id) ?? { kind: 'triggered_later' },
-        trades: cascade.trades,
-        cancelled: cascade.cancelled,
-      }
-    }
     return {
       orderId: request.id,
-      outcome: { kind: 'triggered_later' },
+      outcome: cascade.outcomes.get(request.id) ?? { kind: 'triggered_later' },
       trades: cascade.trades,
       cancelled: cascade.cancelled,
     }
   }
 
   #submitActive(request: OrderRequest): SubmitResult {
+    const own = this.#execute(request)
+    const cascade = this.#runTriggerCascade()
+    return {
+      orderId: request.id,
+      outcome: this.#outcomeNow(own),
+      trades: [...own.result.trades, ...cascade.trades],
+      cancelled: [...own.result.cancelled, ...cascade.cancelled],
+    }
+  }
+
+  /**
+   * Match one order and rest whatever may rest. Never runs the trigger cascade.
+   *
+   * The order is finished, remainder resting, before any stop it triggered gets
+   * to run. Letting a triggered stop go first let it rest on the far side, and
+   * the remainder then rested straight through it: a crossed book. The
+   * differential test never saw it, because this file had the same bug.
+   * SEMANTICS.md section 9.
+   */
+  #execute(request: OrderRequest): { result: SubmitResult; rested: Entry | null } {
     const capped = this.#applyReduceOnly(request)
-    if ('reason' in capped) return reject(request.id, capped.reason)
+    if ('reason' in capped) return { result: reject(request.id, capped.reason), rested: null }
     const effective = capped.request
 
     if (effective.postOnly && this.#wouldCross(effective)) {
-      return reject(request.id, 'post_only_would_cross')
+      return { result: reject(request.id, 'post_only_would_cross'), rested: null }
     }
 
     if (effective.tif === 'FOK' && this.#fillableQuantity(effective) < effective.quantity) {
-      return reject(request.id, 'fok_not_fully_fillable')
+      return { result: reject(request.id, 'fok_not_fully_fillable'), rested: null }
     }
 
     const run = this.#match(effective)
-    const cascade = this.#runTriggerCascade()
-    const trades = [...run.trades, ...cascade.trades]
-    const cancelled = [...run.cancelled, ...cascade.cancelled]
+    const done = (outcome: SubmitResult['outcome']): SubmitResult => ({
+      orderId: request.id,
+      outcome,
+      trades: run.trades,
+      cancelled: run.cancelled,
+    })
 
-    // A FOK that passed the fillability check but was then cut short by STP
-    // takes nothing away with it. SEMANTICS.md section 4.
-    if (effective.tif === 'FOK' && run.remaining > 0n) {
-      return {
-        orderId: request.id,
-        outcome: { kind: 'partially_filled_and_cancelled', unfilled: run.remaining },
-        trades,
-        cancelled,
-      }
-    }
-
-    if (run.remaining === 0n) {
-      return { orderId: request.id, outcome: { kind: 'filled' }, trades, cancelled }
-    }
+    if (run.remaining === 0n) return { result: done({ kind: 'filled' }), rested: null }
 
     // Anything that cannot rest is cancelled: IOC, FOK, and market orders,
-    // which are treated as IOC no matter what TIF they arrived with.
+    // which are treated as IOC no matter what TIF they arrived with. A FOK only
+    // gets here when STP cut it short after it passed the fillability check.
+    // SEMANTICS.md section 4.
     const canRest =
       effective.tif === 'GTC' && effective.type === 'limit' && !run.stoppedByStp
     if (!canRest) {
       return {
-        orderId: request.id,
-        outcome: { kind: 'partially_filled_and_cancelled', unfilled: run.remaining },
-        trades,
-        cancelled,
+        result: done({ kind: 'partially_filled_and_cancelled', unfilled: run.remaining }),
+        rested: null,
       }
     }
 
-    this.#book.push({
+    const entry: Entry = {
       request: effective,
       sequence: this.#sequence++,
       remaining: run.remaining,
       displayed: min(effective.displayQuantity ?? run.remaining, run.remaining),
-    })
-    return {
-      orderId: request.id,
-      outcome: { kind: 'resting', remaining: run.remaining },
-      trades,
-      cancelled,
     }
+    this.#book.push(entry)
+    return { result: done({ kind: 'resting', remaining: run.remaining }), rested: entry }
+  }
+
+  /**
+   * The order's outcome as it stands when submit returns.
+   *
+   * A resting order can be filled, or cancelled by self-trade prevention, by a
+   * stop it triggered itself. Reporting the state at the moment it rested would
+   * tell the client about an order that no longer exists.
+   */
+  #outcomeNow(own: { result: SubmitResult; rested: Entry | null }): SubmitResult['outcome'] {
+    const entry = own.rested
+    if (entry === null) return own.result.outcome
+    if (this.#book.includes(entry)) return { kind: 'resting', remaining: entry.remaining }
+    if (entry.remaining === 0n) return { kind: 'filled' }
+    return { kind: 'partially_filled_and_cancelled', unfilled: entry.remaining }
   }
 
   #applyReduceOnly(
@@ -315,16 +328,22 @@ export class ReferenceEngine implements MatchingEngine {
     return { trades, cancelled, remaining, stoppedByStp }
   }
 
+  /**
+   * Fire every stop the last trade price has reached, in rounds.
+   *
+   * A round takes every waiting stop that is due, in ascending sequence, and
+   * runs each one to completion. Stops that trades in the round made due wait
+   * for the next round. No stop starts a cascade of its own, so a stop triggered
+   * later never jumps ahead of one triggered earlier. SEMANTICS.md section 9.
+   */
   #runTriggerCascade(): {
     trades: Trade[]
     cancelled: OrderId[]
-    firedIds: OrderId[]
     outcomes: Map<OrderId, SubmitResult['outcome']>
   } {
     const trades: Trade[] = []
     const cancelled: OrderId[] = []
-    const firedIds: OrderId[] = []
-    const outcomes = new Map<OrderId, SubmitResult['outcome']>()
+    const fired: { result: SubmitResult; rested: Entry | null }[] = []
 
     for (;;) {
       const last = this.#lastTradePrice
@@ -347,16 +366,17 @@ export class ReferenceEngine implements MatchingEngine {
           price: entry.request.type === 'stop_market' ? null : entry.request.price,
           triggerPrice: null,
         }
-        // The id is already registered, so go straight to the active path.
-        const result = this.#submitActive(converted)
-        trades.push(...result.trades)
-        cancelled.push(...result.cancelled)
-        firedIds.push(converted.id)
-        outcomes.set(converted.id, result.outcome)
+        // The id is already registered, so skip validation.
+        const own = this.#execute(converted)
+        trades.push(...own.result.trades)
+        cancelled.push(...own.result.cancelled)
+        fired.push(own)
       }
     }
 
-    return { trades, cancelled, firedIds, outcomes }
+    const outcomes = new Map<OrderId, SubmitResult['outcome']>()
+    for (const own of fired) outcomes.set(own.result.orderId, this.#outcomeNow(own))
+    return { trades, cancelled, outcomes }
   }
 
   #applyFill(accountId: AccountId, side: Side, quantity: Lots): void {
