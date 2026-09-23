@@ -51,8 +51,14 @@ outcome `rejected` with reason `fok_not_fully_fillable`. Partial execution of a
 FOK is the single worst bug this engine could have, because it leaves the client
 with a position it did not ask for.
 
-Fillability for FOK is judged against *displayed* quantity only. Hidden iceberg
-size does not count toward filling a FOK. This is a deliberate choice, not an
+Fillability for FOK is judged against *displayed* quantity only, and ignores
+self-trade prevention: liquidity from the taker's own account counts as
+fillable even when STP would go on to cancel it. A FOK can therefore pass the
+fillability check and then fill less than its full quantity, which looks like a
+contradiction of this section. It is a known and accepted one, and the engine
+resolves it by cancelling the whole FOK the moment STP interferes, leaving the
+already-executed trades against other accounts standing. Hidden iceberg size
+does not count toward filling a FOK. This is a deliberate choice, not an
 oversight: see [../docs/NON-GOALS.md](../docs/NON-GOALS.md).
 
 ## 5. Order types
@@ -75,6 +81,12 @@ A post-only order that would match any resting liquidity on arrival is rejected
 with `post_only_would_cross`. It never produces a trade and never rests. It is
 rejected on *would cross*, not on *did cross*, so the check happens before any
 matching.
+
+"Would cross" is judged on price alone. If the only crossing liquidity belongs
+to the same account and the order's STP mode would have cancelled that maker,
+the post-only order is still rejected. Deciding otherwise would make the
+rejection depend on the order of two independent features, which is harder to
+reason about than a rule that is occasionally conservative.
 
 Post-only with TIF `IOC` or `FOK` is contradictory, and is rejected with
 `post_only_would_cross` only if it crosses; otherwise the IOC still cannot rest,
@@ -118,6 +130,10 @@ Stops trigger on the last trade price.
 
 - A buy stop triggers when the last trade price is at or above its trigger.
 - A sell stop triggers when the last trade price is at or below its trigger.
+- The condition is also evaluated at submission. A stop submitted into a market
+  whose last trade price already satisfies it triggers immediately rather than
+  waiting for the next trade. A stop submitted before anything has traded has no
+  last trade price to compare against and simply waits.
 - Triggering is evaluated after each trade, and a trade caused by a triggered
   stop can itself trigger further stops. Cascades are resolved to completion
   before the engine returns.
