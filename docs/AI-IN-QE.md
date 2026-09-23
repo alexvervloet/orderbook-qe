@@ -125,7 +125,70 @@ Step 3 is the only interesting number.
 
 ### Results
 
-See `qe/ai/results/generation.json` for the current run.
+Target: the ledger. Model: Sonnet 5. Cost: $0.23.
+
+| | Result |
+| --- | --- |
+| First attempt, against correct code | 25 passed, 1 failed |
+| Typecheck | Failed, then passed after one repair round |
+| After a second repair round | 26 passed, 0 failed |
+| **Mutation kill rate, generated suite** | **11 / 13 = 84.6%** |
+| **Mutation kill rate, hand-written suite** | **13 / 13 = 100%** |
+
+### What it got right, and what it missed
+
+The generated suite is not bad. 26 tests that pass, cover the rounding rule in
+both directions, exercise conservation, and check the boundary above 2^53
+because the prompt asked for it. Read in review it would look thorough, and it
+mostly is.
+
+It missed two mutants, and the two are the interesting part:
+
+**`if (base < 0n || quote < 0n)` becoming `&&`.** The model tested a negative
+deposit, but not each asset separately. With `&&` the guard only fires when both
+are negative, so a test that passes `(-1, -1)` passes either way. Catching it
+needs a test per asset, and the reason to write one is not obvious from the
+specification; it is obvious from thinking about how the line could be wrong.
+
+**`if (held < amount)` becoming `<=`.** The overdraft guard at the exact
+boundary, where a trader spends their balance down to precisely zero. The model
+tested a buyer with too little and a buyer with plenty, and not the buyer with
+exactly enough.
+
+Both are boundary conditions, and both were missing from my hand-written suite
+too until mutation testing pointed at them. That is the honest version of this
+result: the model's blind spots were the same as mine, and the thing that found
+them in both cases was mutation testing rather than either of us being careful.
+
+### What the one-shot failures looked like
+
+Worth recording, because the failure mode is specific and it is not the one
+people expect.
+
+The first run produced three tests that all failed the same way. `feeOf` takes
+`(notional, bps)`, and the model passed an already-multiplied product as the
+first argument with `10_000` as the second, which is a 100% fee. Its own
+comments gave it away: one read `notional * bps = 1001 -> /10000 = 0.1001 ->
+ceil = 1` above a call that passes `1001` as the notional.
+
+So the model had understood the rounding rule from the specification exactly
+right, and got the function's signature wrong. Three tests, one misreading. That
+is why "23 of 26 passed" is a poor quality signal on its own: the failures were
+not three independent mistakes, and neither are the passes three independent
+successes.
+
+### The conclusion I would actually act on
+
+Generated tests are worth having and are not worth trusting. On this module they
+reached about 85% of what the hand-written suite catches, for about twenty
+minutes of supervision and $0.23, and the shortfall was entirely in the
+boundary cases that a specification does not spell out and a careful person
+finds by asking how the line could be wrong.
+
+The workflow that follows is: generate, then run mutation against what came
+back, and treat the surviving mutants as the review comments. That is cheaper
+than reviewing generated tests by reading them, and it catches the thing reading
+does not, which is a test that looks right and checks nothing.
 
 ### What this cost to learn
 
@@ -170,9 +233,10 @@ independently derived from the specification and obvious on inspection. A
 generated oracle shares failure modes with generated tests, and the differential
 suite would then be comparing two things that can be wrong in the same way.
 
-**Not for writing assertions about money.** The fee rounding rule, the
-conservation properties and the escrow arithmetic are hand-written. These are
-the cases where a plausible-looking wrong assertion is most expensive and
-hardest to spot in review.
+**Not for writing assertions about money**, unaided. The fee rounding rule, the
+conservation properties and the escrow arithmetic are hand-written. The
+measurement above is the argument: on the ledger specifically, the generated
+suite missed the overdraft boundary, and the overdraft boundary is where an
+exchange either refuses a trade or lets an account go negative.
 
 **Not for triaging equivalent mutants**, for the reason measured above.

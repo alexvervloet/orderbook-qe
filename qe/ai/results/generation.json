@@ -1,21 +1,27 @@
 {
-  "generatedAt": "2026-09-23T02:08:58.691Z",
+  "generatedAt": "2026-09-23T04:44:44.328Z",
   "model": "claude-sonnet-5",
-  "estimatedSpendUsd": 0.08326,
+  "estimatedSpendUsd": 0.23256,
   "results": [
     {
       "target": "ledger",
-      "typechecks": false,
-      "passedAgainstCorrectCode": 22,
+      "typechecks": true,
+      "repairRounds": 2,
+      "oneShotPassed": 25,
+      "oneShotFailed": 1,
+      "passedAgainstCorrectCode": 26,
       "failedAgainstCorrectCode": 0,
       "generated": {
-        "killed": 0,
-        "scored": 0,
-        "survivors": []
+        "killed": 11,
+        "scored": 13,
+        "survivors": [
+          "sut/backend/ledger.ts:66 || becomes &&",
+          "sut/backend/ledger.ts:132 < becomes <="
+        ]
       },
       "handWritten": {
-        "killed": 0,
-        "scored": 0,
+        "killed": 13,
+        "scored": 13,
         "survivors": []
       }
     }

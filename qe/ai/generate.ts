@@ -255,12 +255,54 @@ for (const target of targets) {
   // Gate 2: does it pass against correct code?
   const passes = run('npx', vitestArgs(target.output))
   const countMatch = /Tests\s+(?:(\d+) failed \| )?(\d+) passed/.exec(passes.output)
-  const failed = Number(countMatch?.[1] ?? 0)
-  const passed = Number(countMatch?.[2] ?? 0)
+  let failed = Number(countMatch?.[1] ?? 0)
+  let passed = Number(countMatch?.[2] ?? 0)
+  const oneShotPassed = passed
+  const oneShotFailed = failed
   console.log(`against correct code: ${passed} passed, ${failed} failed`)
+  // A second repair round, for tests that fail against correct code.
+  //
+  // Same principle as the typecheck round: the model gets its own failure
+  // output back, which is what a person does. I do not edit the file, because
+  // that would make this a measurement of my editing.
   if (failed > 0) {
-    console.log('  tests that fail on correct code are wrong. Not repaired: repairing them')
-    console.log('  by hand would make this a measurement of my editing, not of the model.')
+    console.log('  sending the test failures back for one repair round')
+    const repair = client.messages.stream({
+      model: MODELS.author,
+      max_tokens: 32000,
+      system: SYSTEM,
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'medium' },
+      messages: [
+        { role: 'user', content: userPrompt },
+        { role: 'assistant', content: readFileSync(target.output, 'utf8') },
+        {
+          role: 'user',
+          content:
+            `${failed} of those tests fail against the correct implementation, so ` +
+            `those tests are wrong. Read the failures carefully and check the ` +
+            `argument order and units of the functions you are calling.\n\n` +
+            `${passes.output.slice(0, 6000)}\n\n` +
+            `Return the corrected file in full. Do not weaken or delete a test to ` +
+            `make it pass; work out what the specification actually requires.`,
+        },
+      ],
+    })
+    const repaired = await repair.finalMessage()
+    tracker.record(MODELS.author, repaired.usage)
+    repairRounds += 1
+
+    const repairedText = repaired.content
+      .filter((block) => block.type === 'text')
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('')
+    writeFileSync(target.output, `${stripFence(repairedText)}\n`)
+
+    const retry = run('npx', vitestArgs(target.output))
+    const retryMatch = /Tests\s+(?:(\d+) failed \| )?(\d+) passed/.exec(retry.output)
+    failed = Number(retryMatch?.[1] ?? 0)
+    passed = Number(retryMatch?.[2] ?? 0)
+    console.log(`  after repair: ${passed} passed, ${failed} failed`)
   }
 
   // Gate 3: the only number that matters.
@@ -283,6 +325,8 @@ for (const target of targets) {
     target: target.name,
     typechecks: typecheck.ok,
     repairRounds,
+    oneShotPassed,
+    oneShotFailed,
     passedAgainstCorrectCode: passed,
     failedAgainstCorrectCode: failed,
     generated,

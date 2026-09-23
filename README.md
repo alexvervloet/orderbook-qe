@@ -141,7 +141,10 @@ are perfect on the category that matters most and both fail the same way at the
 edges. One model's confidence score is anti-correlated with being right.
 
 **Test generation**, scored by the mutation kill rate of what it produces rather
-than by whether it looks reasonable.
+than by whether it looks reasonable. On the ledger, a generated suite reached
+11 of 13 against a hand-written 13 of 13, for $0.23 and two repair rounds. Both
+misses were boundary conditions, and both were missing from the hand-written
+suite too until mutation testing pointed at them.
 
 Numbers, method, and what did not work:
 [docs/AI-IN-QE.md](docs/AI-IN-QE.md).
