@@ -17,6 +17,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["qe/**/*.ts", "sut/**/*.ts"],
+  "include": ["spec/**/*.ts", "qe/**/*.ts", "sut/**/*.ts"],
   "exclude": ["node_modules", "dist", "sut/contracts"]
 }
