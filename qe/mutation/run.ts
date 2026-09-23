@@ -14,7 +14,7 @@
  *   npm run mutate -- --target engine    one target
  *   npm run mutate -- --limit 20         a sample, for a quick read
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { findMutants, type MutantSite } from './mutators.ts'
 import { EQUIVALENT_MUTANTS, isKnownEquivalent } from './equivalents.ts'
@@ -106,6 +106,22 @@ function argValue(flag: string): string | undefined {
   return index === -1 ? undefined : process.argv[index + 1]
 }
 
+/**
+ * Kill anything this harness started that outlived it.
+ *
+ * `execFileSync`'s timeout kills the child the harness is waiting on. It does
+ * nothing for grandchildren, and nothing at all if the harness itself is killed
+ * from outside: the test runner's worker processes are then orphaned, and a
+ * worker stuck in a mutant's infinite loop spins a core until someone notices.
+ *
+ * Twenty of them accumulated over one session, at eleven cores between them,
+ * before anyone did. See LESSONS.md.
+ */
+function reapOrphanedWorkers(): void {
+  // Matched narrowly: this repository's test-runner workers and nothing else.
+  spawnSync('pkill', ['-9', '-f', 'vitest/dist/workers'], { stdio: 'ignore' })
+}
+
 /** Returns how the suite reacted to the mutant currently on disk. */
 function runSuite(target: Target): 'killed' | 'survived' | 'timeout' {
   try {
@@ -125,8 +141,13 @@ function runSuite(target: Target): 'killed' | 'survived' | 'timeout' {
     return 'survived' // suite passed, so the mutant lived
   } catch (error) {
     const killed = (error as { signal?: string }).signal
-    // SIGKILL means we hit the timeout rather than the suite reporting failure.
-    return killed === 'SIGKILL' ? 'timeout' : 'killed'
+    if (killed === 'SIGKILL') {
+      // The mutant hung. The runner is dead but its workers are not, and they
+      // are stuck in whatever loop the mutant created.
+      reapOrphanedWorkers()
+      return 'timeout'
+    }
+    return 'killed'
   }
 }
 
@@ -178,11 +199,15 @@ acquireLock()
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     releaseLock()
+    reapOrphanedWorkers()
     console.error('\ninterrupted. Check "git status" for a file left mutated.')
     process.exit(130)
   })
 }
-process.on('exit', releaseLock)
+process.on('exit', () => {
+  releaseLock()
+  reapOrphanedWorkers()
+})
 
 const report: string[] = []
 let totalKilled = 0

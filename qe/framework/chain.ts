@@ -27,6 +27,47 @@ import {
 import { privateKeyToAccount } from 'viem/accounts'
 import { foundry } from 'viem/chains'
 
+/**
+ * Every chain this process started, so none of them outlives it.
+ *
+ * `stop()` in an `afterAll` is not enough. A test file that throws in
+ * `beforeAll`, a worker killed by a timeout, or a run interrupted from the
+ * terminal all skip the hook, and the node keeps running with nothing pointing
+ * at it. Ten of them accumulated over one session before anyone noticed. See
+ * LESSONS.md.
+ */
+const running = new Set<ChildProcess>()
+let exitHooksInstalled = false
+
+function killEveryChain(): void {
+  for (const child of running) {
+    try {
+      child.kill('SIGKILL')
+    } catch {
+      // Already gone. Nothing to do and nothing worth reporting.
+    }
+  }
+  running.clear()
+}
+
+function installExitHooks(): void {
+  if (exitHooksInstalled) return
+  exitHooksInstalled = true
+  process.on('exit', killEveryChain)
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      killEveryChain()
+      process.exit(130)
+    })
+  }
+  // An unhandled rejection in a test file kills the worker without running
+  // afterAll, which is exactly the case that leaked nodes.
+  process.on('uncaughtException', (error) => {
+    killEveryChain()
+    throw error
+  })
+}
+
 const here = dirname(fileURLToPath(import.meta.url))
 const artifactsDir = resolve(here, '../../sut/contracts/out')
 
@@ -79,12 +120,16 @@ export interface LocalChain {
 }
 
 export async function startChain(): Promise<LocalChain> {
+  installExitHooks()
   const port = await freePort()
   const anvil: ChildProcess = spawn(
     process.env.ANVIL_BIN ?? `${process.env.HOME}/.foundry/bin/anvil`,
     ['--port', String(port), '--silent', '--accounts', '5'],
-    { stdio: 'ignore' },
+    // `detached: false` keeps the node in this process group, so a group kill
+    // takes it with us rather than leaving it behind.
+    { stdio: 'ignore', detached: false },
   )
+  running.add(anvil)
 
   const rpcUrl = `http://127.0.0.1:${port}`
   const transport = http(rpcUrl)
@@ -109,8 +154,12 @@ export async function startChain(): Promise<LocalChain> {
       break
     } catch {
       if (Date.now() > deadline) {
-        anvil.kill()
-        throw new Error('anvil did not start within 10s')
+        anvil.kill('SIGKILL')
+        running.delete(anvil)
+        throw new Error(
+          `anvil did not start within 10s on port ${port}. If the machine is ` +
+            'heavily loaded, check for orphaned anvil or test-worker processes.',
+        )
       }
       await new Promise((r) => setTimeout(r, 50))
     }
@@ -165,6 +214,7 @@ export async function startChain(): Promise<LocalChain> {
     },
     async stop() {
       anvil.kill('SIGKILL')
+      running.delete(anvil)
       await new Promise((r) => setTimeout(r, 20))
     },
   }

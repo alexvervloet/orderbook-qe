@@ -98,11 +98,52 @@ export async function deployExchange(
     }
   }
 
+  /**
+   * Setup must not fail quietly.
+   *
+   * The `write` helper returns a revert reason instead of throwing, which is
+   * right for a test placing an order that is meant to be refused and wrong for
+   * fixture setup. When the funding transactions failed silently under parallel
+   * workers, every trader had a zero balance, every order reverted, and the
+   * tests reported the contract disagreeing with the engine. The real fault was
+   * two directories away. See LESSONS.md.
+   */
+  const mustSucceed = async (
+    index: number,
+    to: Address,
+    abi: typeof erc20.abi | typeof exchangeArtifact.abi,
+    functionName: string,
+    args: readonly unknown[],
+  ): Promise<void> => {
+    const failure = await write(index, to, abi, functionName, args)
+    if (failure !== null) {
+      throw new Error(
+        `fixture setup failed: ${functionName} for trader ${index} reverted with ${failure}. ` +
+          'Every test in this file would otherwise run against unfunded accounts.',
+      )
+    }
+  }
+
   for (const [index, trader] of traders.entries()) {
-    await write(index, base, erc20.abi, 'mint', [trader, fundEach])
-    await write(index, quote, erc20.abi, 'mint', [trader, quoteFunding])
-    await write(index, address, exchangeArtifact.abi, 'depositBase', [fundEach])
-    await write(index, address, exchangeArtifact.abi, 'depositQuote', [quoteFunding])
+    await mustSucceed(index, base, erc20.abi, 'mint', [trader, fundEach])
+    await mustSucceed(index, quote, erc20.abi, 'mint', [trader, quoteFunding])
+    await mustSucceed(index, address, exchangeArtifact.abi, 'depositBase', [fundEach])
+    await mustSucceed(index, address, exchangeArtifact.abi, 'depositQuote', [quoteFunding])
+  }
+
+  // Prove the fixture is actually usable before handing it to a test.
+  for (const [index, trader] of traders.entries()) {
+    const deposited = (await chain.publicClient.readContract({
+      address,
+      abi: exchangeArtifact.abi,
+      functionName: 'availableBase',
+      args: [trader],
+    })) as bigint
+    if (deposited !== fundEach) {
+      throw new Error(
+        `fixture setup is wrong: trader ${index} has ${deposited} base, expected ${fundEach}`,
+      )
+    }
   }
 
   const read = async <T>(functionName: string, args: readonly unknown[] = []): Promise<T> =>
