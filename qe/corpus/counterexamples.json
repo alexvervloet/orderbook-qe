@@ -10,11 +10,167 @@
       "takerFeeBps": "7"
     },
     "actions": [
-      { "trader": 0, "isBuy": false, "price": "98", "quantity": "1" },
-      { "trader": 0, "isBuy": true, "price": "99", "quantity": "2" },
-      { "trader": 0, "isBuy": false, "price": "98", "quantity": "1" },
-      { "trader": 0, "isBuy": false, "price": "98", "quantity": "1" }
+      {
+        "trader": 0,
+        "isBuy": false,
+        "price": "98",
+        "quantity": "1"
+      },
+      {
+        "trader": 0,
+        "isBuy": true,
+        "price": "99",
+        "quantity": "2"
+      },
+      {
+        "trader": 0,
+        "isBuy": false,
+        "price": "98",
+        "quantity": "1"
+      },
+      {
+        "trader": 0,
+        "isBuy": false,
+        "price": "98",
+        "quantity": "1"
+      }
     ],
     "reference": "docs/FAILURE-MODES.md#1-partial-fills-exhaust-the-fee-escrow-and-strand-funds"
+  },
+  {
+    "id": "crossed-book-after-stop-2026-09-23",
+    "kind": "session",
+    "summary": "A stop triggered mid-order rested before the order that triggered it, which then rested through it: a crossed book both engines agreed on.",
+    "foundBy": "qe/suites/property/book-invariants.test.ts, both engines",
+    "reference": "LESSONS.md#two-engines-that-agreed-on-a-crossed-book",
+    "commands": [
+      {
+        "kind": "cancel",
+        "targetIndex": 77
+      },
+      {
+        "kind": "submit",
+        "request": {
+          "id": "o1",
+          "accountId": "alice",
+          "side": "buy",
+          "quantity": "1",
+          "displayQuantity": null,
+          "postOnly": false,
+          "reduceOnly": false,
+          "triggerPrice": "96",
+          "stpMode": "none",
+          "type": "stop_limit",
+          "tif": "GTC",
+          "price": "96"
+        }
+      },
+      {
+        "kind": "submit",
+        "request": {
+          "id": "o2",
+          "accountId": "alice",
+          "side": "buy",
+          "quantity": "1",
+          "displayQuantity": null,
+          "postOnly": false,
+          "reduceOnly": false,
+          "triggerPrice": null,
+          "stpMode": "none",
+          "type": "limit",
+          "tif": "GTC",
+          "price": "95"
+        }
+      },
+      {
+        "kind": "submit",
+        "request": {
+          "id": "o3",
+          "accountId": "alice",
+          "side": "buy",
+          "quantity": "1",
+          "displayQuantity": null,
+          "postOnly": false,
+          "reduceOnly": false,
+          "triggerPrice": null,
+          "stpMode": "none",
+          "type": "limit",
+          "tif": "GTC",
+          "price": "95"
+        }
+      },
+      {
+        "kind": "submit",
+        "request": {
+          "id": "o4",
+          "accountId": "alice",
+          "side": "buy",
+          "quantity": "1",
+          "displayQuantity": null,
+          "postOnly": false,
+          "reduceOnly": false,
+          "triggerPrice": null,
+          "stpMode": "none",
+          "type": "limit",
+          "tif": "GTC",
+          "price": "95"
+        }
+      },
+      {
+        "kind": "cancel",
+        "targetIndex": 123
+      },
+      {
+        "kind": "submit",
+        "request": {
+          "id": "o6",
+          "accountId": "alice",
+          "side": "buy",
+          "quantity": "1",
+          "displayQuantity": null,
+          "postOnly": false,
+          "reduceOnly": false,
+          "triggerPrice": null,
+          "stpMode": "none",
+          "type": "limit",
+          "tif": "GTC",
+          "price": "96"
+        }
+      },
+      {
+        "kind": "submit",
+        "request": {
+          "id": "o7",
+          "accountId": "alice",
+          "side": "buy",
+          "quantity": "1",
+          "displayQuantity": null,
+          "postOnly": false,
+          "reduceOnly": false,
+          "triggerPrice": null,
+          "stpMode": "none",
+          "type": "limit",
+          "tif": "GTC",
+          "price": "95"
+        }
+      },
+      {
+        "kind": "submit",
+        "request": {
+          "id": "o8",
+          "accountId": "alice",
+          "side": "sell",
+          "quantity": "2",
+          "displayQuantity": null,
+          "postOnly": false,
+          "reduceOnly": false,
+          "triggerPrice": null,
+          "stpMode": "none",
+          "type": "limit",
+          "tif": "GTC",
+          "price": "96"
+        }
+      }
+    ]
   }
 ]
