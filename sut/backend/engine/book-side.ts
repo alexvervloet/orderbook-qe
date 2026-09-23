@@ -46,10 +46,6 @@ export class BookSide {
     return this.#side
   }
 
-  get isEmpty(): boolean {
-    return this.#prices.length === 0
-  }
-
   /** Best price, or null when the side is empty. */
   bestPrice(): Ticks | null {
     return this.#prices[0] ?? null
