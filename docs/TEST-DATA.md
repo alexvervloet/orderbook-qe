@@ -56,12 +56,13 @@ engine sessions with every order type.
 
 ## Environments
 
-Three compose profiles, so a suite starts only what it needs:
+Three compose profiles, so each use starts only what it needs. The consistency
+and reorg suites do not use them: each test file spawns its own Anvil.
 
 | Command | Contains | For |
 | --- | --- | --- |
 | `docker compose up backend` | API and UI | contract, E2E, load |
-| `docker compose --profile chain up` | plus Anvil | onchain and consistency |
+| `docker compose --profile chain up` | plus Anvil | working against the contract by hand |
 | `docker compose --profile chaos up` | plus Toxiproxy | fault injection |
 
 Everything a test process starts for itself binds to an ephemeral port: the
@@ -69,8 +70,8 @@ contract-test server and the Anvil node each test file spawns. A fixed port is a
 flaky test waiting for a parallel run, and the fix is an ephemeral port rather
 than a retry. The long-lived services are the exception, on fixed ports because
 something outside the test has to find them: compose publishes 8080, 8545, 8474
-and 8666, and Playwright's server listens on 8099. Each can be moved with an
-environment variable.
+and 8666, each movable with an environment variable, and Playwright's server
+listens on 8099.
 
 ## Resetting between tests
 
