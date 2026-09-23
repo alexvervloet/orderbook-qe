@@ -22,12 +22,24 @@ contract OrderBookInvariantTest is Test {
     Handler internal handler;
 
     address internal constant FEES = address(0xFEE);
+    uint256 internal constant BASE_SCALE = 1_000_000;
+    uint256 internal constant WORST_FEE_BPS = 7;
+
+    /**
+     * Quote units per lot per tick. At 10,000 against a 10,000 basis-point
+     * denominator every fee is a whole unit and rounding never happens, which
+     * is how the escrow dust got past this suite. AwkwardScaleInvariantTest
+     * reruns everything at 3.
+     */
+    function _quoteScale() internal pure virtual returns (uint256) {
+        return 10_000;
+    }
 
     function setUp() public {
         base = new MockERC20();
         quote = new MockERC20();
         exchange = new OrderBookExchange(
-            IERC20(address(base)), IERC20(address(quote)), 10_000, 1_000_000, 2, 7, FEES
+            IERC20(address(base)), IERC20(address(quote)), _quoteScale(), BASE_SCALE, 2, WORST_FEE_BPS, FEES
         );
 
         address[] memory traders = new address[](3);
@@ -119,6 +131,36 @@ contract OrderBookInvariantTest is Test {
         }
     }
 
+    /**
+     * Every unit locked belongs to an order that is still open, to the unit.
+     *
+     * Solvency only says the contract does not owe more than it holds. Funds
+     * locked against nothing pass it, and they are just as lost to the trader:
+     * no order is left to cancel, so nothing will ever release them. That is
+     * what the per-fill fee rounding did.
+     */
+    function invariant_LockedFundsMatchOpenOrders() public view {
+        uint64 lastId = exchange.nextOrderId();
+        for (uint256 t = 0; t < handler.traderCount(); t++) {
+            address trader = handler.traderAt(t);
+            uint256 expectedQuote = 0;
+            uint256 expectedBase = 0;
+            for (uint64 id = 1; id < lastId; id++) {
+                (address owner, uint128 price, uint128 remaining, bool isBuy,,) = exchange.orders(id);
+                if (owner != trader) continue;
+                uint256 feeLock = uint256(remaining) * _ceilDiv(uint256(price) * _quoteScale() * WORST_FEE_BPS, 10_000);
+                if (isBuy) {
+                    expectedQuote += uint256(remaining) * price * _quoteScale() + feeLock;
+                } else {
+                    expectedBase += uint256(remaining) * BASE_SCALE;
+                    expectedQuote += feeLock;
+                }
+            }
+            assertEq(exchange.lockedQuote(trader), expectedQuote, "quote locked against no open order");
+            assertEq(exchange.lockedBase(trader), expectedBase, "base locked against no open order");
+        }
+    }
+
     /// The fee account only ever grows, and never holds base.
     function invariant_FeeAccountHoldsOnlyQuote() public view {
         assertEq(exchange.availableBase(FEES), 0);
@@ -184,6 +226,10 @@ contract OrderBookInvariantTest is Test {
             : exchange.availableQuote(FEES) + exchange.lockedQuote(FEES);
     }
 
+    function _ceilDiv(uint256 numerator, uint256 denominator) internal pure returns (uint256) {
+        return numerator == 0 ? 0 : (numerator - 1) / denominator + 1;
+    }
+
     function _assertOrdered(bool isBuy) internal view {
         uint128 price = exchange.bestPrice(isBuy);
         uint256 steps = 0;
@@ -199,3 +245,10 @@ contract OrderBookInvariantTest is Test {
 }
 
 import {console2} from "forge-std/console2.sol";
+
+/// @dev The same properties on a market whose fees do not divide evenly.
+contract AwkwardScaleInvariantTest is OrderBookInvariantTest {
+    function _quoteScale() internal pure override returns (uint256) {
+        return 3;
+    }
+}
