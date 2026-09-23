@@ -36,23 +36,23 @@ export const RULES: readonly Rule[] = [
   },
   {
     pattern: /^sut\/contracts\//,
-    suites: ['solidity', 'consistency'],
-    why: 'Contract changes affect onchain behaviour and the offchain/onchain comparison.',
+    suites: ['solidity', 'consistency', 'chaos'],
+    why: 'Contract changes affect onchain behaviour, the offchain/onchain comparison, and the reorg reconciliation that deploys it.',
   },
   {
     pattern: /^sut\/backend\/engine\//,
-    suites: ['unit', 'property', 'integration', 'consistency', 'contract', 'e2e'],
+    suites: ['unit', 'property', 'integration', 'consistency', 'contract', 'e2e', 'chaos', 'perf'],
     why: 'Everything sits on top of matching, so a change here reaches every layer.',
   },
   {
     pattern: /^sut\/backend\/ledger\.ts$/,
-    suites: ['property', 'integration', 'consistency', 'contract'],
+    suites: ['property', 'integration', 'consistency', 'contract', 'chaos'],
     why: 'Settlement arithmetic, compared against the contract and asserted as conservation properties.',
   },
   {
     pattern: /^sut\/backend\/(exchange|wire|server|seed|main)\.ts$/,
-    suites: ['contract', 'integration', 'e2e'],
-    why: 'Service surface: protocols, serialisation and the paths the browser drives.',
+    suites: ['contract', 'integration', 'e2e', 'chaos', 'perf'],
+    why: 'Service surface: protocols, serialisation, the paths the browser drives, and what the fault-injection and load suites hit.',
   },
   {
     pattern: /^sut\/frontend\//,
@@ -68,6 +68,16 @@ export const RULES: readonly Rule[] = [
     pattern: /^qe\/framework\//,
     suites: ['ALL'],
     why: 'Shared equipment. A broken harness can make any suite pass while testing nothing.',
+  },
+  {
+    pattern: /^qe\/corpus\//,
+    suites: ['property'],
+    why: 'Saved counterexamples are replayed by the property suite.',
+  },
+  {
+    pattern: /^qe\/mutation\//,
+    suites: ['unit'],
+    why: 'The equivalent-mutant registry is checked against the real operators by a unit test.',
   },
   {
     pattern: /^qe\/suites\/([^/]+)\//,
@@ -89,6 +99,11 @@ export const ALL_SUITES = [
   'consistency',
   'solidity',
   'e2e',
+  // Missing from the first version, so nothing ever selected them: the reorg
+  // suite imports the engine, the ledger and the contract, and a change to
+  // any of them selected everything except the one suite that combines them.
+  'chaos',
+  'perf',
 ] as const
 
 export interface Selection {

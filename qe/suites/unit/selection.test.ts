@@ -25,11 +25,17 @@ describe('test selection', () => {
     expect(select(['sut/frontend/app.js']).suites).toEqual(['e2e'])
   })
 
-  it('runs the solidity and consistency suites for a contract change', () => {
+  it('runs the solidity, consistency and reorg suites for a contract change', () => {
     expect(select(['sut/contracts/src/OrderBookExchange.sol']).suites).toEqual([
+      'chaos',
       'consistency',
       'solidity',
     ])
+  })
+
+  it('runs the chaos suite when the engine or ledger it imports changes', () => {
+    expect(select(['sut/backend/engine/matching-engine.ts']).suites).toContain('chaos')
+    expect(select(['sut/backend/ledger.ts']).suites).toContain('chaos')
   })
 
   it('runs a suite when that suite changes', () => {
@@ -52,6 +58,6 @@ describe('test selection', () => {
   it('unions the suites across several changed files', () => {
     const { suites } = select(['sut/frontend/app.js', 'sut/contracts/src/OrderBookExchange.sol'])
 
-    expect(suites).toEqual(['consistency', 'e2e', 'solidity'])
+    expect(suites).toEqual(['chaos', 'consistency', 'e2e', 'solidity'])
   })
 })
