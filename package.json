@@ -27,6 +27,7 @@
     "select": "node --experimental-strip-types qe/select/affected.ts"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@types/node": "^22.18.6",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^5.0.0",
