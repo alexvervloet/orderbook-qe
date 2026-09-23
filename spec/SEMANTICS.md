@@ -62,9 +62,9 @@ exactly as section 7 says: `cancel_maker` removes the maker and the FOK keeps
 matching, while `cancel_taker` and `cancel_both` stop it. Whatever is still
 unfilled when matching ends is cancelled, outcome
 `partially_filled_and_cancelled`, and the trades already executed against other
-accounts stand. Hidden iceberg size
-does not count toward filling a FOK. This is a deliberate choice, not an
-oversight: see [../docs/NON-GOALS.md](../docs/NON-GOALS.md).
+accounts stand. Hidden iceberg size does not count toward filling a FOK. This is
+a deliberate choice, not an oversight: see
+[../docs/NON-GOALS.md](../docs/NON-GOALS.md).
 
 ## 5. Order types
 
