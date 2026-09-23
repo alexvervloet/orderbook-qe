@@ -39,13 +39,32 @@ fee account.
 Fees round **up**, always, in the exchange's favour.
 
 This is a decision, not an accident, and it is the reason `ceilDiv` exists
-rather than a division. Rounding to nearest is the intuitive choice and it is
-wrong here: over enough trades it produces occasions where the fee account pays
-out more than it took in, and a fee account that can go negative is a hole in
-the balance sheet that nobody is watching.
+rather than a division. Rounding to nearest is the intuitive choice: it charges
+less than the exact fee about half the time, so small trades can pay nothing and
+the exchange undercharges without any balance going wrong. Rounding up means
+every trade pays at least its exact fee, and each client pays at most one
+indivisible unit more. The reasoning is in
+[../docs/PRECISION.md](../docs/PRECISION.md).
 
-Rounding up means every client pays at most one indivisible unit more than the
-exact fee. The direction is asserted by a test, not documented and hoped for.
+The direction is asserted by a test, not documented and hoped for.
+
+## Escrow, onchain only
+
+The contract takes funds before a trade can happen, so it needs a second rule
+the offchain ledger does not. An order locks, per lot, at its own limit price:
+
+```
+feePerLot = ceilDiv(price * quoteScale * max(makerFeeBps, takerFeeBps), 10000)
+buy locks   quantity * (price * quoteScale + feePerLot)   quote
+sell locks  quantity * baseScale base, and quantity * feePerLot quote
+```
+
+Each fill releases exactly `fill * feePerLot` at the price that order locked
+at, plus the notional or base it covered, and the fee actually charged is the
+settlement rule above. The escrowed fee is never less than the charged fee, and
+releasing by the same per-lot rule that locked means nothing is left behind when
+the order is gone. Both halves of that have been wrong once; see
+[../docs/FAILURE-MODES.md](../docs/FAILURE-MODES.md).
 
 ## The invariants
 
