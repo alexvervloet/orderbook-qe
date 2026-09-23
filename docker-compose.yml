@@ -1,0 +1,64 @@
+# Environments for testing. Three profiles, because the tests need different
+# things and starting a chain for a unit test wastes forty seconds a run.
+#
+#   docker compose up backend                  REST, WebSocket and JSON-RPC only
+#   docker compose --profile chain up          adds an Anvil node
+#   docker compose --profile chaos up          adds a proxy that can break things
+#
+# See docs/TEST-DATA.md for how state is seeded and reset.
+
+services:
+  backend:
+    build: .
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      PORT: 8080
+      SEED_ACCOUNTS: "1"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 2s
+
+  # A local chain. Block time is zero so tests are not waiting on a clock;
+  # the reorg and finality tests drive block production explicitly instead.
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.8.3
+    profiles: ["chain", "chaos"]
+    entrypoint:
+      - anvil
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8545"
+      - --accounts
+      - "5"
+      - --silent
+    ports:
+      - "${ANVIL_PORT:-8545}:8545"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "cast block-number --rpc-url http://127.0.0.1:8545 > /dev/null 2>&1"
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # Fault injection between a client and the backend: added latency, dropped
+  # connections, bandwidth limits. The chaos suite drives it over its API
+  # rather than configuring it here, so each test declares its own conditions.
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    profiles: ["chaos"]
+    ports:
+      - "${TOXIPROXY_API_PORT:-8474}:8474"
+      - "${TOXIPROXY_PORT:-8666}:8666"
+    depends_on:
+      backend:
+        condition: service_healthy
