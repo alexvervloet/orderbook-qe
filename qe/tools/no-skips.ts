@@ -18,8 +18,26 @@ interface AllowedSkip {
   readonly issue: string
 }
 
-/** Empty on purpose. Adding to it is a decision someone has to defend. */
-const ALLOWED: readonly AllowedSkip[] = []
+/**
+ * Every skip in the repository, with the reason it is allowed.
+ *
+ * Adding to this list is a decision someone has to defend, which is the point:
+ * the cost of skipping should be a paragraph of justification, not one
+ * character.
+ */
+const ALLOWED: readonly AllowedSkip[] = [
+  {
+    file: 'qe/suites/chaos/network.test.ts',
+    reason:
+      'Fault injection needs Toxiproxy, which only exists under the chaos ' +
+      'compose profile. The suite skips when it is unreachable rather than ' +
+      'failing, because a developer running `npm test` has not done anything ' +
+      'wrong. The skip is loud: the first test in the file always runs and ' +
+      'prints the command needed to make the rest run, so a nightly job that ' +
+      'silently stopped exercising fault injection is visible in the log.',
+    issue: 'n/a, permanent by design',
+  },
+]
 
 const SKIP_PATTERN = /\b(?:it|test|describe)\.(?:skip|todo)\b|\bxit\b|\bxdescribe\b/
 
