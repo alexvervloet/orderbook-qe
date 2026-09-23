@@ -332,3 +332,51 @@ contract that should have been reverting constantly, and five skipped tests
 against a service that was demonstrably up. The habit that catches this class is
 not writing better tests, it is reading the run output as data rather than
 scanning it for red.
+
+## Twenty orphaned test workers, eleven cores, three hours
+
+**Found by** the person whose laptop it was, asking why Activity Monitor was
+full of node processes. Not by me, and not by anything in this repository.
+
+**What happened.** The mutation harness runs the suite once per mutant through
+`execFileSync`. Some mutants turn a loop into an infinite one. When I killed a
+hung mutation run with `pkill`, it killed the harness and orphaned the test
+runner's worker processes, which were still spinning inside the mutant's loop
+with nothing pointing at them.
+
+Twenty accumulated, at 1119% CPU between them, alongside ten Anvil nodes leaked
+the same way. Load average reached 130.
+
+**It also caused a bug hunt that had nothing to do with the bug.** The
+offchain/onchain suites started failing with the contract reporting empty books.
+I was three steps into blaming fixture setup when the real cause was that the
+machine had no CPU left to start a chain in.
+
+**Three separate faults.**
+
+1. The per-mutant timeout I added after the first hang kills the child the
+   harness is waiting on. It does nothing when the harness itself is killed from
+   outside, which is precisely how the first hang ended.
+2. `startChain` killed its Anvil in `stop()`, called from `afterAll`. A file
+   that throws in `beforeAll`, or a worker killed by a timeout, never reaches
+   `afterAll`.
+3. The onchain fixture swallowed setup failures. Unfunded accounts produced
+   "the contract disagrees with the engine" instead of "setup failed".
+
+**Fixes.** The mutation runner reaps orphaned workers on timeout, on signal and
+on exit. `startChain` tracks every chain it starts and kills them all from
+`exit`, `SIGINT`, `SIGTERM` and `uncaughtException`. The onchain fixture asserts
+every funding transaction succeeded and then reads a balance back to prove it.
+
+Verified by simulating the crash: a script that starts a chain and throws before
+`stop()` now leaves nothing behind.
+
+**Next time.** Cleanup that lives only in the happy path is not cleanup. That is
+the same lesson as the `finally` that could not run because its `try` was
+blocked, and I did not generalise it the first time: I fixed the specific case
+and left the same shape in two other places.
+
+Any process this harness spawns needs an owner that survives the harness dying,
+and "I will remember to call stop()" is not one. The check is not "does cleanup
+run when the test passes", it is "does cleanup run when the process is killed
+mid-test", and the way to find out is to kill it and look.
