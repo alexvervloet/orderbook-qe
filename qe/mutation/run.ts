@@ -151,8 +151,27 @@ function rebuildIfCompiled(target: Target): void {
   }
 }
 
-/** Returns how the suite reacted to the mutant currently on disk. */
-function runSuite(target: Target): 'killed' | 'survived' | 'timeout' {
+/** The runner could not run the suite at all. Never a kill. */
+class HarnessError extends Error {}
+
+/**
+ * Set by SIGINT or SIGTERM. Checked between mutants.
+ *
+ * The handler cannot act directly. The loop used to be entirely synchronous, so
+ * Node never got back to its event loop to deliver the signal: a SIGTERM to the
+ * runner was ignored until every mutant had run. Ctrl-C at a terminal reached
+ * the vitest child as well, which died, and that death was scored as a kill
+ * before the loop moved on to the next mutant.
+ */
+let interrupted: NodeJS.Signals | null = null
+
+/** The file currently holding a mutant, so any exit path can put it back. */
+let pendingRestore: { file: string; original: string } | null = null
+
+type SuiteResult = 'killed' | 'survived' | 'timeout' | 'interrupted'
+
+/** Returns how the suite reacted to the source currently on disk. */
+function runSuite(target: Target): SuiteResult {
   try {
     execFileSync(target.command[0]!, target.command.slice(1), {
       cwd: target.cwd,
@@ -169,23 +188,50 @@ function runSuite(target: Target): 'killed' | 'survived' | 'timeout' {
     })
     return 'survived' // suite passed, so the mutant lived
   } catch (error) {
-    const killed = (error as { signal?: string }).signal
-    if (killed === 'SIGKILL') {
+    const e = error as { code?: unknown; signal?: string | null; status?: number | null }
+    // A spawn failure has a string code such as ENOENT. With forge missing,
+    // every contract mutant used to count as killed and scored 100%.
+    if (typeof e.code === 'string') {
+      throw new HarnessError(`could not run ${target.command.join(' ')}: ${e.code}`)
+    }
+    if (e.signal === 'SIGKILL') {
       // The mutant hung. The runner is dead but its workers are not, and they
       // are stuck in whatever loop the mutant created.
       reapOrphanedWorkers()
       return 'timeout'
     }
+    // A child killed by an interrupt did not fail a test. It was stopped.
+    if (e.signal === 'SIGINT' || e.signal === 'SIGTERM') return 'interrupted'
     return 'killed'
   }
 }
 
-function evaluate(target: Target, sites: readonly MutantSite[]): Outcome[] {
+/**
+ * Run the suite on the unmutated source first. A suite that is already red, or
+ * that finds no tests, "kills" every mutant it is given, and the score it
+ * produces is a measurement of nothing.
+ */
+function baseline(target: Target): void {
+  const result = runSuite(target)
+  if (result === 'survived') return
+  if (result === 'interrupted') return
+  throw new HarnessError(
+    `${target.name}: the suite does not pass on the unmutated source (${result}). ` +
+      `Fix that before scoring: \`${target.command.join(' ')}\` in ${target.cwd}`,
+  )
+}
+
+/** Yield to the event loop so a pending signal handler can run. */
+const yieldToSignals = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
+
+async function evaluate(target: Target, sites: readonly MutantSite[]): Promise<Outcome[]> {
   const original = readFileSync(target.file, 'utf8')
   const outcomes: Outcome[] = []
 
   try {
     for (const [index, site] of sites.entries()) {
+      await yieldToSignals()
+      if (interrupted !== null) break
       // Progress on a terminal only. In CI this would be thousands of lines
       // of carriage returns in a log nobody can read.
       if (process.stdout.isTTY) {
@@ -195,8 +241,13 @@ function evaluate(target: Target, sites: readonly MutantSite[]): Outcome[] {
         outcomes.push({ site, status: 'equivalent' })
         continue
       }
+      pendingRestore = { file: target.file, original }
       writeFileSync(target.file, site.mutated)
       const status = runSuite(target)
+      if (status === 'interrupted') {
+        interrupted ??= 'SIGINT'
+        break
+      }
       if (status === 'timeout') {
         console.log(`\n  timeout: ${site.file}:${site.line} ${site.mutator.description}`)
       }
@@ -206,6 +257,7 @@ function evaluate(target: Target, sites: readonly MutantSite[]): Outcome[] {
     // Restore no matter what. A crashed run that leaves a mutant in the source
     // is a far worse outcome than a missing report.
     writeFileSync(target.file, original)
+    pendingRestore = null
     rebuildIfCompiled(target)
   }
   if (process.stdout.isTTY) process.stdout.write('\r')
@@ -223,18 +275,16 @@ if (targets.length === 0) {
 }
 
 acquireLock()
-// Restore and unlock even on Ctrl-C. Without this, interrupting a run leaves a
-// mutant in the working tree, and the next person to run the tests debugs a
-// defect that was never committed.
+// Restore and unlock even on Ctrl-C. The handler only records the signal; the
+// loop sees it at its next yield, stops, and its finally restores the source.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
-    releaseLock()
-    reapOrphanedWorkers()
-    console.error('\ninterrupted. Check "git status" for a file left mutated.')
-    process.exit(130)
+    interrupted = signal
   })
 }
 process.on('exit', () => {
+  // Last resort for any exit that skipped the finally, such as process.exit.
+  if (pendingRestore !== null) writeFileSync(pendingRestore.file, pendingRestore.original)
   releaseLock()
   reapOrphanedWorkers()
 })
@@ -248,9 +298,18 @@ const survivors: MutantSite[] = []
 console.log('Mutation testing. Each mutant is a deliberate defect.\n')
 
 for (const target of targets) {
+  if (interrupted !== null) break
   const source = readFileSync(target.file, 'utf8')
   const sites = findMutants(target.file, source).slice(0, limit)
-  const outcomes = evaluate(target, sites)
+  let outcomes: Outcome[]
+  try {
+    baseline(target)
+    outcomes = await evaluate(target, sites)
+  } catch (error) {
+    if (!(error instanceof HarnessError)) throw error
+    console.error(`\n${error.message}`)
+    process.exit(2)
+  }
 
   // A hang is a kill: the suite would never have gone green.
   const killed = outcomes.filter((o) => o.status === 'killed' || o.status === 'timeout').length
@@ -269,6 +328,12 @@ for (const target of targets) {
     `(${equivalent} known equivalent, ${timedOut} killed by timeout)`
   console.log(line)
   report.push(line)
+}
+
+if (interrupted !== null) {
+  // A partial score reads like a whole one. Better to report nothing.
+  console.error(`\ninterrupted by ${interrupted}. Source restored; no report written.`)
+  process.exit(130)
 }
 
 const overall = totalScored === 0 ? 1 : totalKilled / totalScored
