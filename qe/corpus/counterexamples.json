@@ -42,7 +42,7 @@
     "kind": "session",
     "summary": "A stop triggered mid-order rested before the order that triggered it, which then rested through it: a crossed book both engines agreed on.",
     "foundBy": "qe/suites/property/book-invariants.test.ts, both engines",
-    "reference": "LESSONS.md#two-engines-that-agreed-on-a-crossed-book",
+    "reference": "docs/FAILURE-MODES.md#5-both-engines-could-leave-the-book-crossed",
     "commands": [
       {
         "kind": "cancel",
