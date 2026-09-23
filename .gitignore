@@ -1,0 +1,25 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+*.log
+
+# Scratch plan, never committed
+PLAN.md
+
+# Foundry
+sut/contracts/out/
+sut/contracts/cache/
+sut/contracts/broker/
+
+# Test and tooling output
+qe/mutation/reports/
+qe/suites/perf/results/
+playwright-report/
+test-results/
+.vitest-cache/
+
+# Local environment
+.env
+.env.*
+!.env.example
