@@ -552,3 +552,26 @@ to kill, which no balance can fund.
 **Next time.** A mutation score is only as good as three things around it: what
 counts as a mutant, what counts as a kill, and what counts as excused. Each of
 those was wrong here in a way that made the number go up.
+
+## Two failures in the triage corpus never happened
+
+**Expected.** The triage corpus is twelve failures that happened while building
+this repository, labelled once the cause was known. Its header said so, and
+the AI write-up said so.
+
+**What happened.** An audit looked for a record of each one and found ten. The
+port collision under parallel workers and the empty price level after a cancel
+had no trace in these notes or the commit history, and they had been written
+to fill out the categories rather than taken from a real failure. The second
+one was even named for a crossed book it did not describe. They moved the
+result: Haiku 4.5 beat Sonnet 5 by 9 to 8 of 12 with them, and the two tie at 7
+of 10 without.
+
+**Fix.** Both are out of the corpus. The scores were recomputed from the
+per-case verdicts already recorded, so no model was run again, and the
+write-up says what changed and why.
+
+**Next time.** An evaluation set earns its "real" label one entry at a time,
+with a pointer to where each case happened. An entry nobody can point to is a
+test of the author's imagination, and a model that recognises what I imagine is
+not the thing I was trying to measure.
