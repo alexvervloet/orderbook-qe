@@ -575,3 +575,24 @@ write-up says what changed and why.
 with a pointer to where each case happened. An entry nobody can point to is a
 test of the author's imagination, and a model that recognises what I imagine is
 not the thing I was trying to measure.
+
+## A mutant killed by luck
+
+**Expected.** The contract's mutation score, 52 of 53 locally, would be the
+same on the nightly runner.
+
+**What happened.** The first nightly run on GitHub scored 51 of 53. The extra
+survivor turned a taker seller's credit into a debit, a real bug that would
+charge sellers for their own proceeds. Locally, a fuzz test or invariant run
+had happened to hit it with that run's random seed. On GitHub's seed nothing
+did, because no deterministic test checked what a taker seller receives. The
+fuzz and invariant suites choose a new seed every run, so which mutants they
+kill varies from run to run.
+
+**Fix.** A unit test that checks the taker seller's proceeds exactly. The
+local rerun is back to 52 of 53, with only the documented survivor.
+
+**Next time.** When randomized tests are part of what a mutation run measures,
+the score is a sample, not a fact. A survivor that appears on one machine and
+not another is not flakiness in the runner. It is a behaviour that only a lucky
+seed was checking, and it wants a fixed test.
