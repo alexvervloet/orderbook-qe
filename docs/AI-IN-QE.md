@@ -24,7 +24,7 @@ implementation.
 
 ### Method
 
-Twelve failures that really happened while building this repository, with their
+Ten failures that really happened while building this repository, with their
 evidence as an engineer would see it: the output, the timings, the symptoms.
 Each was labelled by hand afterwards, once the cause was established.
 
@@ -43,42 +43,57 @@ useful thing a triage step can produce:
 fails loudly. Broken equipment passes, which is far worse, and the response is
 different: you have to go back and disbelieve earlier results.
 
+### A correction
+
+The first published version of this page scored twelve cases and called all of
+them real. Two were invented: a port collision under parallel workers, and an
+empty price level left behind by a cancel. Haiku 4.5 labelled both correctly and
+Sonnet 5 one of them, so they moved the ranking: 9 of 12 against 8 of 12 became
+a tie. Worse than the numbers, a corpus that includes the failures its author
+imagined measures how well a model recognises imagined failures, which is the
+thing this corpus exists to avoid.
+
+The two are gone from `qe/ai/corpus.ts`. The scores below are recomputed from
+the per-case verdicts the original runs recorded in `qe/ai/results/`, with the
+two invented cases left out, so no model was run again. The next run scores the
+ten directly.
+
 ### Results
 
-| Model | Correct | Accuracy | Cost per run |
+| Model | Correct | Accuracy | Cost of the recorded run |
 | --- | --- | --- | --- |
-| Haiku 4.5 | 9 / 12 | 75.0% | $0.020 |
-| Sonnet 5 | 8 / 12 | 66.7% | $0.047 |
+| Haiku 4.5 | 7 / 10 | 70% | $0.020 |
+| Sonnet 5 | 7 / 10 | 70% | $0.047 |
 
-Per label, Haiku 4.5:
+The costs are for the original twelve-case runs.
 
-| Label | Precision | Recall |
-| --- | --- | --- |
-| `product-bug` | 100% | 100% |
-| `test-bug` | 100% | 50% |
-| `test-equipment` | 40% | 100% |
-| `environment` | 100% | 100% |
-| `equivalent` | n/a | 0% |
+Per label:
+
+| Label | Haiku 4.5 precision | Haiku 4.5 recall | Sonnet 5 precision | Sonnet 5 recall |
+| --- | --- | --- | --- | --- |
+| `product-bug` | 2 / 2 | 2 / 2 | 1 / 1 | 1 / 2 |
+| `test-bug` | 2 / 2 | 2 / 4 | 3 / 4 | 3 / 4 |
+| `test-equipment` | 2 / 5 | 2 / 2 | 2 / 4 | 2 / 2 |
+| `environment` | 1 / 1 | 1 / 1 | 1 / 1 | 1 / 1 |
+| `equivalent` | none predicted | 0 / 1 | none predicted | 0 / 1 |
 
 ### What this actually says
 
-**The cheaper model was not worse.** Sonnet 5 cost 2.4 times as much and scored
-one lower. With n = 12 that difference is noise and the honest reading is that
-there is no measurable advantage here, not that Haiku is better. The useful
-conclusion is the decision it supports: triage runs on Haiku 4.5, and the
-upgrade would have to earn its place on a bigger corpus.
+**The cheaper model was not worse.** On the real cases the two tie, and Sonnet 5
+cost 2.4 times as much. With n = 10 a tie is all this can say; it does not show
+Haiku is better. The decision it supports is that triage runs on Haiku 4.5, and
+the upgrade would have to earn its place on a bigger corpus.
 
 **The expensive model made the dangerous mistake.** The worst error in triage is
 dismissing a real defect, because it sends the fix to the wrong place and the
-bug ships. Haiku 4.5 got all three product bugs right. Sonnet 5 called one of
-them, the contract's overflow panic, a test bug: it argued the test's inputs
-were unrealistic and the assertion should be loosened, which is exactly the
-wrong response. Neither model ever called a product bug an environment problem.
-One miss in three is too few cases to rank the models on, and it is the reason
-triage output here is a suggestion and never a gate.
+bug ships. Haiku 4.5 got both product bugs right. Sonnet 5 called one of them,
+the contract's overflow panic, a test bug: it argued the test's inputs were
+unrealistic and the assertion should be loosened, which is exactly the wrong
+response. One miss in two cases is too few to rank the models on, and it is the
+reason triage output here is a suggestion and never a gate.
 
-**It over-predicts `test-equipment`.** Haiku 4.5's precision on it is 40%. Every
-Haiku miss, and three of Sonnet 5's four, was something else called
+**It over-predicts `test-equipment`.** Haiku 4.5 is right about it two times in
+five. Every Haiku miss, and two of Sonnet 5's three, was something else called
 `test-equipment`. The models are good at noticing that a suite is not exercising
 what it claims and poor at telling that apart from a test that is simply wrong.
 
@@ -96,8 +111,8 @@ stays human, and the registry in `qe/mutation/equivalents.ts` exists so that
 work is done once.
 
 **Confidence is not usable, and on one model is worse than useless.** Haiku 4.5
-averaged 0.95 confidence when wrong against 0.92 when right: anti-correlated.
-Sonnet 5 was 0.69 against 0.72, correctly ordered but far too close to threshold
+averaged 0.95 confidence when wrong against 0.91 when right: anti-correlated.
+Sonnet 5 was 0.67 against 0.71, correctly ordered but far too close to threshold
 on. Nothing in this pipeline routes on the confidence number, because measuring
 it showed it does not carry information.
 
@@ -216,10 +231,10 @@ looks exactly like a badly written one three steps later. The runner now checks
 `stop_reason` explicitly and treats `max_tokens` as a failed run.
 
 **A model that answered in prose.** Offered a tool and left to choose, Sonnet 5
-answered one of twelve triage cases in text instead of calling it. Forcing the
-tool fixed it and also moved schema enforcement server-side. A structured step
-that fails on one input in twelve because the answer arrived in the wrong shape
-is not a structured step.
+answered one of the twelve triage cases of the time in text instead of calling
+it. Forcing the tool fixed it and also moved schema enforcement server-side. A
+structured step that fails on one input in twelve because the answer arrived in
+the wrong shape is not a structured step.
 
 ## Model choice
 
