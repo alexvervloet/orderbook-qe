@@ -219,7 +219,7 @@ written up in [docs/NON-GOALS.md](docs/NON-GOALS.md).
 cd sut/contracts && forge test
 ```
 
-Expect 44 tests passing across four suites. The contract is
+Expect 45 tests passing across four suites. The contract is
 [OrderBookExchange.sol](sut/contracts/src/OrderBookExchange.sol). It only does
 good-till-cancelled limit orders; stops, icebergs and self-trade prevention
 live offchain. Read, in order:
