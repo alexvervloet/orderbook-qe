@@ -6,7 +6,7 @@
  * the real cause was known.
  *
  * The score is the point. "I use AI to analyse failures" is unfalsifiable.
- * "It agrees with my labels on N of 12, and the ones it misses are all of one
+ * "It agrees with my labels on N of 10, and the ones it misses are all of one
  * kind" is a claim that can be checked and acted on.
  *
  *   ANTHROPIC_API_KEY=... npm run ai:triage
