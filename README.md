@@ -190,10 +190,12 @@ Two tracks, both scored, because "we use AI" is unfalsifiable.
 
 **Failure triage.** A model classifies real failures into the categories that
 decide what happens next, graded against labels assigned by hand once the cause
-was known. Haiku 4.5 gets 9 of 12; Sonnet 5 gets 8 of 12 at 2.4x the price, and
-it made the one dangerous mistake: it called a real product bug a test bug.
-Neither can recognise an equivalent mutant, and one model's confidence score is
-anti-correlated with being right.
+was known. Haiku 4.5 and Sonnet 5 both get 7 of 10, Sonnet at 2.4x the price,
+and Sonnet made the one dangerous mistake: it called a real product bug a test
+bug. Neither can recognise an equivalent mutant, and one model's confidence
+score is anti-correlated with being right. An earlier version of the corpus
+included two failures I had invented rather than hit; they are gone, and the
+page says what that changed.
 
 **Test generation**, scored by the mutation kill rate of what it produces rather
 than by whether it looks reasonable. On the ledger, a generated suite killed 7
