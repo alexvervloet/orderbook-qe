@@ -119,6 +119,10 @@ docs/        the decisions
 
 ## Running it
 
+[WALKTHROUGH.md](WALKTHROUGH.md) is the guided version: the order to run and
+read things in, the code worth reading at each step, and what will surprise
+you. The short version:
+
 Prerequisites: Node 22.6 or later (CI uses 24), and [Foundry](https://getfoundry.sh) v1.8.3
 for the contract and every suite that deploys it. Docker and
 [k6](https://k6.io) are only needed for the chaos and performance suites.
