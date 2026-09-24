@@ -27,7 +27,7 @@ lost most of its value even when it works.
 | Property: differential, book invariants, ledger, corpus replay, 300 runs | 23 | 0.7s | PR |
 | Contract: REST, WebSocket, JSON-RPC | 29 | 0.7s | PR |
 | Consistency: offchain against onchain, 5 runs | 9 | 4.1s | PR |
-| Solidity unit and fuzz, 256 fuzz runs | 40 | 0.1s | PR |
+| Solidity unit and fuzz, 256 fuzz runs | 41 | 0.1s | PR |
 | Solidity invariants, 64 runs x 32 depth, two markets | 18 | 1.2s | PR |
 | End-to-end | 6 | 2.5s, Playwright's own timing | PR |
 | Container build, boot and a trade | | about 45s on GitHub | PR |
