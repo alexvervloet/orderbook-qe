@@ -66,6 +66,13 @@ escrow is exactly 2^256 - 1, which no balance can fund, and the only difference
 it makes is which refusal the caller sees. It is not equivalent, so it is not
 excused. It is reported.
 
+**A kill has to be deterministic.** The first nightly run on GitHub scored the
+contract at 51 of 53. The extra survivor turned a taker seller's credit into a
+debit. Locally a randomly seeded fuzz or invariant run had happened to kill it;
+on GitHub's seed nothing did, because no fixed test checked what a taker seller
+receives. It has one now. A kill that depends on the seed is luck, and the
+score above is only honest while every kill in it would happen on any seed.
+
 **Mutants killed by timeout** turned a loop into an infinite one. They count as
 killed, because a suite that never finishes never goes green, and are flagged
 separately so they are not mistaken for ordinary kills.
