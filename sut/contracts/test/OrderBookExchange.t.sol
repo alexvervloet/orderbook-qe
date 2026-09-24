@@ -355,6 +355,23 @@ contract OrderBookExchangeTest is ExchangeTest {
         assertEq(exchange.lockedQuote(alice), 0);
     }
 
+    /**
+     * A taker seller is credited the notional less the taker fee. Mutation
+     * testing on CI found nothing deterministic checked this: flipping the
+     * credit to a debit was killed locally by a lucky fuzz seed and survived
+     * on another. A kill that depends on the seed is not a test.
+     */
+    function test_TakerSellerReceivesTheNotionalLessTheTakerFee() public {
+        _place(alice, true, 100, 1);
+        uint256 before = exchange.availableQuote(bob);
+        _place(bob, false, 100, 1);
+
+        uint256 notional = 100 * QUOTE_SCALE;
+        uint256 takerFee = (notional * TAKER_FEE_BPS + 9_999) / 10_000;
+        assertEq(exchange.availableQuote(bob), before + notional - takerFee);
+        assertEq(exchange.lockedQuote(bob), 0);
+    }
+
     /// Matching stops the moment the taker is filled, with one event per fill.
     function test_StopsMatchingOnceTheTakerIsFilled() public {
         _place(bob, false, 100, 1);
