@@ -6,6 +6,11 @@
  * matters: a corpus of invented failures measures how well a model recognises
  * the kind of failure a person thinks to invent, which is not the question.
  *
+ * It did not always hold. Two invented entries, a port collision and an empty
+ * price level after a cancel, sat here for the first scored runs, described as
+ * real. They were removed, and the published scores were recomputed from the
+ * per-case verdicts on the ten real failures. See docs/AI-IN-QE.md.
+ *
  * The labels are the taxonomy that decides what happens next, which is the only
  * useful thing a triage step can produce:
  *
@@ -177,36 +182,6 @@ export const FAILURE_CORPUS: readonly LabelledFailure[] = [
       'Conservation is satisfied by moving nothing. The suite asserted that totals ' +
       'were unchanged but never that the two counterparties moved in opposite ' +
       'directions. A gap in the tests, not a defect in the ledger.',
-  },
-  {
-    id: 'flaky-port-collision',
-    evidence: [
-      'Suite: contract tests. Intermittent.',
-      'Error: listen EADDRINUSE: address already in use 127.0.0.1:8080',
-      'Fails roughly one run in twelve, always under a parallel worker count above 4.',
-      'Passes on retry with no code change.',
-    ].join('\n'),
-    label: 'environment',
-    rationale:
-      'A fixed port under parallel workers. The fix is an ephemeral port, not a ' +
-      'retry, but the failure is environmental rather than a defect in either the ' +
-      'system or the assertions.',
-  },
-  {
-    id: 'crossed-book-after-cancel',
-    evidence: [
-      'Suite: differential property test.',
-      'Diverged at command 14.',
-      'state diverged',
-      '  reference: "bids": ["101x2/1"]',
-      '  production: "bids": ["101x2/1", "101x0/0"]',
-      'Session ends with a cancel of the last order at a price level.',
-    ].join('\n'),
-    label: 'product-bug',
-    rationale:
-      'The production book left an empty price level linked after its last order ' +
-      'was cancelled, so it advertises a level with no depth. The reference engine ' +
-      'recomputes and does not.',
   },
 ]
 
