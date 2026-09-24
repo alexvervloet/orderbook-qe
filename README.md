@@ -133,7 +133,7 @@ npm install
 (cd sut/contracts && forge build)    # the consistency and chaos suites deploy this bytecode
 
 npm test                             # 228 tests; 5 network chaos tests skip without Toxiproxy
-(cd sut/contracts && forge test)     # 44 Solidity unit, fuzz and invariant tests
+(cd sut/contracts && forge test)     # 45 Solidity unit, fuzz and invariant tests
 npx playwright install chromium && npm run test:e2e
 
 docker compose --profile chaos up -d --wait
