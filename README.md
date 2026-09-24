@@ -119,7 +119,7 @@ docs/        the decisions
 
 ## Running it
 
-Prerequisites: Node 22 or later, and [Foundry](https://getfoundry.sh) v1.8.3
+Prerequisites: Node 22.6 or later (CI uses 24), and [Foundry](https://getfoundry.sh) v1.8.3
 for the contract and every suite that deploys it. Docker and
 [k6](https://k6.io) are only needed for the chaos and performance suites.
 
